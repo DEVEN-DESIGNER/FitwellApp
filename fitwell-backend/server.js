@@ -1,0 +1,749 @@
+
+require("dotenv").config();
+
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+const crypto = require("crypto");
+
+const Category = require("./models/Category");
+const Product = require("./models/Product");
+const Admin = require("./models/Admin");
+const Retailer = require("./models/Retailer");
+const Order = require("./models/Order");
+const inventoryRoutes = require("./routes/inventoryRoutes");
+
+const app = express();
+
+app.use(cors());
+app.use(express.json({ limit: "1mb" }));
+
+const adminTokenSecret = process.env.ADMIN_TOKEN_SECRET || "fitwell-local-admin-secret-change-me";
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function passwordMatches(password, storedHash) {
+  const [salt, expected] = String(storedHash).split(":");
+  if (!salt || !expected) return false;
+  const actual = crypto.scryptSync(password, salt, 64).toString("hex");
+  return crypto.timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
+}
+
+function hashResetToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function createAdminToken() {
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+  const payload = String(expiresAt);
+  const signature = crypto.createHmac("sha256", adminTokenSecret).update(payload).digest("hex");
+  return `${payload}.${signature}`;
+}
+
+function isValidAdminToken(token) {
+  const [expiresAt, signature] = String(token || "").split(".");
+  if (!expiresAt || !signature || Number(expiresAt) < Date.now()) return false;
+  const expected = crypto.createHmac("sha256", adminTokenSecret).update(expiresAt).digest("hex");
+  const actualBuffer = Buffer.from(signature, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function normalizeIndianMobile(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.length === 12 && digits.startsWith("91")) return digits;
+  return null;
+}
+
+async function sendTrackingSms({ phone, orderNumber, courierName, trackingNumber }) {
+  const authKey = process.env.MSG91_AUTH_KEY;
+  const templateId = process.env.MSG91_TRACKING_TEMPLATE_ID;
+  const mobile = normalizeIndianMobile(phone);
+  if (!authKey || !templateId || !mobile) return { status: "not_configured" };
+
+  const response = await fetch("https://control.msg91.com/api/v5/flow", {
+    method: "POST",
+    headers: { accept: "application/json", authkey: authKey, "content-type": "application/json" },
+    body: JSON.stringify({
+      template_id: templateId,
+      short_url: "0",
+      recipients: [{ mobiles: mobile, VAR1: orderNumber, VAR2: courierName, VAR3: trackingNumber }],
+    }),
+  });
+  if (!response.ok) throw new Error(`MSG91 returned ${response.status}`);
+  return { status: "sent" };
+}
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const username = String(req.body?.username || "").trim();
+  if (!username) return res.status(400).json({ message: "Username is required." });
+
+  try {
+    const admin = await Admin.findOne({ username, isActive: true });
+    if (!admin) return res.status(404).json({ message: "Admin account not found." });
+
+    const resetToken = crypto.randomInt(100000, 1000000).toString();
+    admin.resetTokenHash = hashResetToken(resetToken);
+    admin.resetTokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await admin.save();
+
+    // A mail provider is not configured for this local app, so expose the
+    // one-time code to the UI during development.
+    res.json({ message: "Reset code generated. It expires in 15 minutes.", resetToken });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to generate a reset code right now." });
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  const { username, resetToken, newPassword } = req.body || {};
+  if (!username || !resetToken || !newPassword) {
+    return res.status(400).json({ message: "Username, reset code and new password are required." });
+  }
+  if (String(newPassword).length < 8) {
+    return res.status(400).json({ message: "New password must be at least 8 characters." });
+  }
+
+  try {
+    const admin = await Admin.findOne({
+      username: String(username).trim(),
+      isActive: true,
+      resetTokenHash: hashResetToken(String(resetToken).trim()),
+      resetTokenExpiresAt: { $gt: new Date() },
+    });
+    if (!admin) return res.status(400).json({ message: "Reset code is invalid or expired." });
+
+    admin.passwordHash = hashPassword(String(newPassword));
+    admin.resetTokenHash = null;
+    admin.resetTokenExpiresAt = null;
+    await admin.save();
+    res.json({ message: "Password reset successfully. You can now sign in." });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to reset the password right now." });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ message: "Username and password are required." });
+  }
+  try {
+    const admin = await Admin.findOne({ username: username.trim(), isActive: true });
+    if (!admin || !passwordMatches(password, admin.passwordHash)) {
+      return res.status(401).json({ message: "Invalid admin username or password." });
+    }
+    const token = createAdminToken();
+    res.json({ token, username: admin.username, role: admin.role });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to sign in right now." });
+  }
+});
+
+app.post("/api/retailer/auth/login", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
+  try {
+    const retailer = await Retailer.findOne({ email, status: "approved", isActive: true });
+    if (!retailer || !retailer.passwordHash || !passwordMatches(password, retailer.passwordHash)) return res.status(401).json({ message: "Invalid retailer login details." });
+    retailer.lastLoginAt = new Date(); retailer.loginCount += 1; await retailer.save();
+    res.json({ retailerId: retailer._id, shopName: retailer.shopName, ownerName: retailer.ownerName });
+  } catch (error) { res.status(500).json({ message: "Unable to sign in right now." }); }
+});
+
+function requireAdmin(req, res, next) {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  if (!isValidAdminToken(token)) return res.status(401).json({ message: "Admin login required." });
+  next();
+}
+
+app.use("/api", requireAdmin);
+
+// ---------------- RETAILERS ----------------
+
+app.get("/api/retailers", async (req, res) => {
+  try {
+    const retailers = await Retailer.find().select("-passwordHash").sort({ createdAt: -1 });
+    res.json(retailers);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.post("/api/retailers", async (req, res) => {
+  try {
+    const { shopName, ownerName, phone, email, password, address, gstNumber } = req.body || {};
+    if (!shopName?.trim() || !ownerName?.trim() || !phone?.trim() || !email?.trim() || !password) {
+      return res.status(400).json({ message: "Shop name, owner name, phone, email and password are required." });
+    }
+    if (String(password).length < 8) return res.status(400).json({ message: "Retailer password must be at least 8 characters." });
+    const retailer = await Retailer.create({ shopName, ownerName, phone, email, passwordHash: hashPassword(String(password)), address, gstNumber });
+    retailer.passwordHash = undefined;
+    res.status(201).json(retailer);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.patch("/api/retailers/:id/status", async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    if (!["pending", "approved", "rejected"].includes(status)) {
+      return res.status(400).json({ message: "Invalid retailer status." });
+    }
+    const retailer = await Retailer.findByIdAndUpdate(req.params.id, { status }, { new: true, runValidators: true });
+    if (!retailer) return res.status(404).json({ message: "Retailer not found." });
+    res.json(retailer);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.patch("/api/retailers/:id/active", async (req, res) => {
+  try {
+    const retailer = await Retailer.findByIdAndUpdate(req.params.id, { isActive: Boolean(req.body?.isActive) }, { new: true });
+    if (!retailer) return res.status(404).json({ message: "Retailer not found." });
+    res.json(retailer);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// ---------------- ORDERS ----------------
+
+app.get("/api/orders", async (req, res) => {
+  try {
+    const filter = req.query.status && req.query.status !== "all" ? { status: req.query.status } : {};
+    const orders = await Order.find(filter).populate("retailer", "shopName ownerName phone").sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.post("/api/orders", async (req, res) => {
+  try {
+    const { retailerId, items, notes = "" } = req.body || {};
+    const retailer = await Retailer.findOne({ _id: retailerId, status: "approved", isActive: true });
+    if (!retailer) return res.status(400).json({ message: "Select an active, approved retailer." });
+    if (!Array.isArray(items) || !items.length) return res.status(400).json({ message: "Add at least one product to the order." });
+
+    const orderItems = [];
+    for (const requested of items) {
+      const quantity = Number(requested.quantity);
+      if (!mongoose.isValidObjectId(requested.productId) || !Number.isInteger(quantity) || quantity < 1) {
+        return res.status(400).json({ message: "Each order item needs a valid product and quantity." });
+      }
+      const product = await Product.findById(requested.productId).populate("category", "name");
+      if (!product || !product.isActive) return res.status(400).json({ message: "One selected product is unavailable." });
+      const variant = product.hasVariants ? product.variants.id(requested.variantId) : null;
+      if (product.hasVariants && !variant) return res.status(400).json({ message: `Select a valid variant for ${product.name}.` });
+      const source = variant || product;
+      orderItems.push({ product: product._id, variantId: variant?._id || null, name: product.name, sku: source.sku, size: source.size || "", nut: source.nut || "", inner: source.inner || "", glassy: source.glassy || "", quantity, unitPrice: source.sellingPrice, total: source.sellingPrice * quantity });
+    }
+
+    const subtotal = orderItems.reduce((sum, item) => sum + item.total, 0);
+    if (subtotal < 10000) return res.status(400).json({ message: "Minimum order value is ₹10,000." });
+    const gstRate = 18;
+    const gstAmount = Number((subtotal * gstRate / 100).toFixed(2));
+    const total = Number((subtotal + gstAmount).toFixed(2));
+    const orderNumber = `FW-${Date.now().toString(36).toUpperCase()}`;
+    const order = await Order.create({ orderNumber, retailer: retailer._id, items: orderItems, subtotal, gstRate, gstAmount, total, notes });
+    res.status(201).json(await order.populate("retailer", "shopName ownerName phone"));
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.patch("/api/orders/:id/status", async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    const allowed = ["pending", "approved", "dispatched", "in_transit", "delivered", "cancelled"];
+    if (!allowed.includes(status)) return res.status(400).json({ message: "Invalid order status." });
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: "Order not found." });
+    if (order.status === "cancelled" || order.status === "delivered") return res.status(400).json({ message: "This order can no longer be changed." });
+
+    if (status === "approved" && order.status !== "approved") {
+      for (const item of order.items) {
+        const product = await Product.findById(item.product);
+        const stockSource = product?.hasVariants ? product.variants.id(item.variantId) : product;
+        if (!product || !stockSource || stockSource.stock < item.quantity) return res.status(400).json({ message: `Insufficient stock for ${item.name} (${item.sku}).` });
+      }
+      for (const item of order.items) {
+        const product = await Product.findById(item.product);
+        const stockSource = product.hasVariants ? product.variants.id(item.variantId) : product;
+        stockSource.stock -= item.quantity;
+        await product.save();
+      }
+      order.approvedAt = new Date();
+    }
+    order.status = status;
+    if (status === "dispatched" && !order.dispatchDate) order.dispatchDate = new Date();
+    if (status === "delivered") order.deliveredAt = new Date();
+    await order.save();
+    res.json(await order.populate("retailer", "shopName ownerName phone"));
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.patch("/api/orders/:id/shipping", async (req, res) => {
+  try {
+    const { courierName = "", trackingNumber = "" } = req.body || {};
+    if (!String(courierName).trim() || !String(trackingNumber).trim()) return res.status(400).json({ message: "Courier name and tracking number are required." });
+    const order = await Order.findByIdAndUpdate(req.params.id, { courierName: String(courierName).trim(), trackingNumber: String(trackingNumber).trim().toUpperCase(), status: "dispatched", dispatchDate: new Date() }, { new: true, runValidators: true }).populate("retailer", "shopName ownerName phone");
+    if (!order) return res.status(404).json({ message: "Order not found." });
+    let notification = { status: "not_configured" };
+    try { notification = await sendTrackingSms({ phone: order.retailer?.phone, orderNumber: order.orderNumber, courierName: order.courierName, trackingNumber: order.trackingNumber }); }
+    catch (error) { console.error("Tracking SMS error:", error.message); notification = { status: "failed", message: error.message }; }
+    order.trackingNotificationStatus = notification.status;
+    if (notification.status === "sent") order.trackingNotificationSentAt = new Date();
+    await order.save();
+    res.json({ order, notification });
+  } catch (error) { res.status(400).json({ message: error.message }); }
+});
+
+// ---------------- HEALTH CHECK ----------------
+
+app.get("/", (req, res) => {
+  res.json({ message: "Fitwell API is running" });
+});
+
+// ---------------- CATEGORIES ----------------
+
+app.get("/api/categories", async (req, res) => {
+  try {
+    const categories = await Category.find().sort({ name: 1 });
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.post("/api/categories", async (req, res) => {
+  try {
+    const name = req.body.name?.trim();
+
+    if (!name) {
+      return res.status(400).json({
+        message: "Category name is required.",
+      });
+    }
+
+    const category = await Category.create({
+      name,
+      description: req.body.description || "",
+    });
+
+    res.status(201).json(category);
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "This category already exists.",
+      });
+    }
+
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.put("/api/categories/:id", async (req, res) => {
+  try {
+    const updates = {};
+
+    if (typeof req.body.name === "string") {
+      updates.name = req.body.name.trim();
+    }
+
+    if (typeof req.body.description === "string") {
+      updates.description = req.body.description.trim();
+    }
+
+    const category = await Category.findByIdAndUpdate(
+      req.params.id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    if (!category) {
+      return res.status(404).json({
+        message: "Category not found.",
+      });
+    }
+
+    res.json(category);
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "This category name already exists.",
+      });
+    }
+
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.delete("/api/categories/:id", async (req, res) => {
+  try {
+    const category = await Category.findByIdAndUpdate(
+      req.params.id,
+      { $set: { isActive: false } },
+      { new: true }
+    );
+
+    if (!category) {
+      return res.status(404).json({
+        message: "Category not found.",
+      });
+    }
+
+    res.json({
+      message: "Category deactivated.",
+      category,
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// ---------------- PRODUCTS ----------------
+
+// Get products with populated category
+app.get("/api/products", async (req, res) => {
+  try {
+    const products = await Product.find()
+      .populate("category", "name isActive")
+      .sort({ createdAt: -1 });
+
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Create variant or standalone product
+app.post("/api/products", async (req, res) => {
+  try {
+    const {
+      name,
+      category,
+      material,
+      description,
+      hasVariants = true,
+      sku,
+      purchasePrice,
+      sellingPrice,
+      stock,
+      variants,
+    } = req.body;
+
+    if (!name?.trim()) {
+      return res.status(400).json({
+        message: "Product name is required.",
+      });
+    }
+
+    if (!mongoose.isValidObjectId(category)) {
+      return res.status(400).json({
+        message: "Please select a valid category.",
+      });
+    }
+
+    const categoryDoc = await Category.findOne({
+      _id: category,
+      isActive: true,
+    });
+
+    if (!categoryDoc) {
+      return res.status(400).json({
+        message: "Selected category is inactive or does not exist.",
+      });
+    }
+
+    // Product name must contain a meaningful category word.
+    const categoryWords = categoryDoc.name
+      .toLowerCase()
+      .split(/[\s-]+/)
+      .filter((word) => word.length > 1);
+
+    const normalizedName = name.trim().toLowerCase();
+
+    if (
+      categoryWords.length &&
+      !categoryWords.some((word) => normalizedName.includes(word))
+    ) {
+      return res.status(400).json({
+        message: `Product name "${name.trim()}" does not match category "${categoryDoc.name}".`,
+      });
+    }
+
+    if (typeof hasVariants !== "boolean") {
+      return res.status(400).json({
+        message: "hasVariants must be true or false.",
+      });
+    }
+
+    const normalizedCategory = categoryDoc.name.toLowerCase();
+
+    // Tap products are standalone products.
+    const isTapCategory =
+      normalizedCategory.includes("tap") &&
+      !normalizedCategory.includes("health faucet");
+
+    const productData = {
+      name: name.trim(),
+      category,
+      material: material || "",
+      description: description || "",
+      hasVariants,
+      variants: [],
+    };
+
+    if (hasVariants) {
+      if (!Array.isArray(variants) || variants.length === 0) {
+        return res.status(400).json({
+          message: "Add at least one product variant.",
+        });
+      }
+
+      const normalizedVariants = variants.map((v) => ({
+        nut: String(v.nut || "").trim(),
+        inner: String(v.inner || "").trim(),
+        glassy: String(v.glassy || "").trim(),
+        size: String(v.size || "").trim(),
+        sku: String(v.sku || "").trim().toUpperCase(),
+        purchasePrice:
+          v.purchasePrice === "" ? NaN : Number(v.purchasePrice ?? 0),
+        sellingPrice:
+          v.sellingPrice === "" ? NaN : Number(v.sellingPrice),
+        stock: v.stock === "" ? NaN : Number(v.stock ?? 0),
+      }));
+
+      const needsNutInner =
+        normalizedCategory.includes("connection pipe") ||
+        normalizedCategory.includes("shower tube");
+
+      const needsGlassy = normalizedCategory.includes("shower tube");
+      const needsSize = !isTapCategory;
+
+      const invalidVariant = normalizedVariants.some((v) => {
+        const commonInvalid =
+          (needsSize && !v.size) ||
+          !v.sku ||
+          !Number.isFinite(v.purchasePrice) ||
+          v.purchasePrice < 0 ||
+          !Number.isFinite(v.sellingPrice) ||
+          v.sellingPrice < 0 ||
+          !Number.isFinite(v.stock) ||
+          v.stock < 0;
+
+        const nutInnerInvalid =
+          needsNutInner && (!v.nut || !v.inner);
+
+        const glassyInvalid = needsGlassy && !v.glassy;
+
+        return commonInvalid || nutInnerInvalid || glassyInvalid;
+      });
+
+      if (invalidVariant) {
+        return res.status(400).json({
+          message: "Check required variant fields, SKU, prices and stock.",
+        });
+      }
+
+      // Check duplicate SKUs inside this product.
+      const skus = normalizedVariants.map((v) => v.sku);
+
+      if (new Set(skus).size !== skus.length) {
+        return res.status(400).json({
+          message: "Every variant must have a unique SKU.",
+        });
+      }
+
+      // Check SKU collision with existing products and variants.
+      const existingSku = await Product.findOne({
+        $or: [
+          { sku: { $in: skus } },
+          { "variants.sku": { $in: skus } },
+        ],
+      });
+
+      if (existingSku) {
+        return res.status(409).json({
+          message: "One or more SKUs already exist.",
+        });
+      }
+
+      productData.variants = normalizedVariants;
+    } else {
+      const normalizedSku = String(sku || "").trim().toUpperCase();
+
+      const normalizedPurchasePrice =
+        purchasePrice === "" || purchasePrice == null
+          ? NaN
+          : Number(purchasePrice);
+
+      const normalizedSellingPrice =
+        sellingPrice === "" || sellingPrice == null
+          ? NaN
+          : Number(sellingPrice);
+
+      const normalizedStock =
+        stock === "" || stock == null ? NaN : Number(stock);
+
+      if (
+        !normalizedSku ||
+        !Number.isFinite(normalizedPurchasePrice) ||
+        normalizedPurchasePrice < 0 ||
+        !Number.isFinite(normalizedSellingPrice) ||
+        normalizedSellingPrice < 0 ||
+        !Number.isFinite(normalizedStock) ||
+        normalizedStock < 0
+      ) {
+        return res.status(400).json({
+          message: "Enter SKU, valid prices and stock for this product.",
+        });
+      }
+
+      const existingSku = await Product.findOne({
+        $or: [
+          { sku: normalizedSku },
+          { "variants.sku": normalizedSku },
+        ],
+      });
+
+      if (existingSku) {
+        return res.status(409).json({
+          message: "This SKU already exists.",
+        });
+      }
+
+      productData.sku = normalizedSku;
+      productData.purchasePrice = normalizedPurchasePrice;
+      productData.sellingPrice = normalizedSellingPrice;
+      productData.stock = normalizedStock;
+    }
+
+    const product = await Product.create(productData);
+
+    const populatedProduct = await Product.findById(product._id)
+      .populate("category", "name isActive");
+
+    return res.status(201).json(populatedProduct);
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "A SKU already exists. Enter a unique SKU.",
+      });
+    }
+
+    return res.status(400).json({
+      message: error.message,
+    });
+  }
+});
+
+// ---------------- UPDATE PRODUCT API ----------------
+
+app.put("/api/products/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: "Invalid product ID",
+      });
+    }
+
+    const {
+      name,
+      category,
+      material,
+      description,
+      variants,
+    } = req.body;
+
+    if (!name || !category) {
+      return res.status(400).json({
+        message: "Product name and category are required",
+      });
+    }
+
+    const updatedProduct = await Product.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          name: name.trim(),
+          category,
+          material: material || "",
+          description: description || "",
+          variants: Array.isArray(variants) ? variants : [],
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).populate("category");
+
+    if (!updatedProduct) {
+      return res.status(404).json({
+        message: "Product not found",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Product updated successfully",
+      product: updatedProduct,
+    });
+  } catch (error) {
+    console.error("Update product error:", error);
+
+    return res.status(500).json({
+      message: error.message || "Failed to update product",
+    });
+  }
+});
+
+// ---------------- INVENTORY ROUTES ----------------
+
+app.use("/api/inventory", inventoryRoutes);
+
+// ---------------- SERVER START ----------------
+
+async function startServer() {
+  try {
+    if (!process.env.MONGODB_URI) {
+      throw new Error("MONGODB_URI is missing in .env");
+    }
+
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log("MongoDB connected");
+    await Product.syncIndexes();
+    console.log("Product indexes synchronized");
+
+    const seedUsername = (process.env.ADMIN_USERNAME || "admin").trim();
+    const seedPassword = process.env.ADMIN_PASSWORD || "fitwell123";
+    const existingAdmin = await Admin.findOne({ username: seedUsername });
+    if (!existingAdmin) {
+      await Admin.create({ username: seedUsername, passwordHash: hashPassword(seedPassword) });
+      console.log(`Seeded admin user: ${seedUsername}`);
+    }
+
+    const port = process.env.PORT || 5000;
+
+    app.listen(port, () => {
+      console.log(`Fitwell API running on http://localhost:${port}`);
+    });
+  } catch (error) {
+    console.error("Backend startup failed:", error.message);
+    process.exit(1);
+  }
+}
+
+startServer();

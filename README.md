@@ -22,6 +22,7 @@ A complete digital ordering solution for **Fitwell Sanitary Fittings**, enabling
 
 ### Admin Dashboard
 - Complete product CRUD operations
+- Admin login is required before the dashboard and admin API can be accessed.
 - Product categories and image management
 - Flexible product attributes and variant combinations
 - SKU, size-wise pricing and inventory management
@@ -40,3 +41,20 @@ Each sellable size and variant can have its own SKU, price and stock quantity.
 
 ### Project Status
 Development repository only. The project is intended for local development, testing and Git-based collaboration. No production deployment, public release or app-store publishing is included in the current scope.
+
+### Local admin login
+
+On first backend startup, an admin user is seeded into MongoDB using `ADMIN_USERNAME` and `ADMIN_PASSWORD` from the environment. If they are not set during local development, the defaults are:
+
+- Username: `admin`
+- Password: `fitwell123`
+
+Set custom values in `fitwell-backend/.env` before running the backend for anything beyond local testing.
+
+Passwords are stored as scrypt hashes in the `admins` collection, not as plain text. Changing the environment values does not overwrite an existing admin; update or remove that database record if you need to change the login.
+
+The login also includes a forgot-password flow. It creates a one-time six-digit reset code valid for 15 minutes and stores only its hash in MongoDB. Because no email provider is configured yet, the code is displayed in the local development UI; connect an email provider before using this flow in production.
+
+### Dispatch SMS setup
+
+Dispatch uses MSG91's Flow SMS API. Add `MSG91_AUTH_KEY` and `MSG91_TRACKING_TEMPLATE_ID` to `fitwell-backend/.env`. The approved MSG91 template should define `VAR1` for the order number, `VAR2` for the courier name, and `VAR3` for the tracking number. When tracking is saved, the system sends the SMS to the retailer's 10-digit Indian mobile number. See the [MSG91 Flow SMS API documentation](https://docs.msg91.com/sms/send-sms).
