@@ -5,12 +5,15 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 
 const Category = require("./models/Category");
 const Product = require("./models/Product");
 const Admin = require("./models/Admin");
 const Retailer = require("./models/Retailer");
 const Order = require("./models/Order");
+const Invoice = require("./models/Invoice");
+const InventoryMovement = require("./models/InventoryMovement");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 
 const app = express();
@@ -43,6 +46,57 @@ function createAdminToken() {
   return `${payload}.${signature}`;
 }
 
+function getInventoryVariantLabel(variant = {}) {
+  return [variant.size, variant.nut, variant.inner, variant.glassy].filter(Boolean).join(" / ") || "Standard";
+}
+
+// Reserve stock once when an order is approved or dispatched.
+// The approvedAt timestamp is the idempotency guard for later status changes.
+async function reserveOrderInventory(order) {
+  const stockChanges = [];
+
+  for (const item of order.items) {
+    const product = await Product.findById(item.product).populate("category", "name");
+    const source = product?.hasVariants ? product.variants.id(item.variantId) : product;
+    const available = Number(source?.stock ?? -1);
+
+    if (!product || !source || !Number.isInteger(available) || available < item.quantity) {
+      throw new Error(`Insufficient stock for ${item.name} (${item.sku}).`);
+    }
+
+    stockChanges.push({ product, source, item, available });
+  }
+
+  for (const { product, source, item, available } of stockChanges) {
+    const isVariant = Boolean(product.hasVariants);
+    const filter = isVariant
+      ? { _id: product._id, "variants._id": source._id, "variants.stock": { $gte: item.quantity } }
+      : { _id: product._id, stock: { $gte: item.quantity } };
+    const update = isVariant
+      ? { $inc: { "variants.$.stock": -item.quantity } }
+      : { $inc: { stock: -item.quantity } };
+    const result = await Product.updateOne(filter, update);
+
+    if (!result.matchedCount) {
+      throw new Error(`Insufficient stock for ${item.name} (${item.sku}).`);
+    }
+
+    await InventoryMovement.create({
+      sku: item.sku,
+      productId: product._id,
+      productName: product.name,
+      categoryName: product.category?.name || "",
+      variantLabel: isVariant ? getInventoryVariantLabel(source) : product.size || "Standard",
+      movementType: "OUT",
+      quantity: item.quantity,
+      previousStock: available,
+      newStock: available - item.quantity,
+      note: `Order ${order.orderNumber} ${order.status === "pending" ? "approved" : "dispatched"}`,
+      createdBy: "Fitwell Admin",
+    });
+  }
+}
+
 function isValidAdminToken(token) {
   const [expiresAt, signature] = String(token || "").split(".");
   if (!expiresAt || !signature || Number(expiresAt) < Date.now()) return false;
@@ -52,29 +106,37 @@ function isValidAdminToken(token) {
   return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
-function normalizeIndianMobile(phone) {
-  const digits = String(phone || "").replace(/\D/g, "");
-  if (digits.length === 10) return `91${digits}`;
-  if (digits.length === 12 && digits.startsWith("91")) return digits;
-  return null;
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
-async function sendTrackingSms({ phone, orderNumber, courierName, trackingNumber }) {
-  const authKey = process.env.MSG91_AUTH_KEY;
-  const templateId = process.env.MSG91_TRACKING_TEMPLATE_ID;
-  const mobile = normalizeIndianMobile(phone);
-  if (!authKey || !templateId || !mobile) return { status: "not_configured" };
+async function sendTrackingEmail({ email, clientName, orderNumber, courierName, trackingNumber, dispatchDate, total, items }) {
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPassword = process.env.SMTP_PASSWORD;
+  const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
+  const smtpPort = Number(process.env.SMTP_PORT || 465);
+  const from = process.env.SMTP_FROM || smtpUser;
+  if (!smtpUser || !smtpPassword || !from || !String(email || "").trim()) return { status: "not_configured" };
 
-  const response = await fetch("https://control.msg91.com/api/v5/flow", {
-    method: "POST",
-    headers: { accept: "application/json", authkey: authKey, "content-type": "application/json" },
-    body: JSON.stringify({
-      template_id: templateId,
-      short_url: "0",
-      recipients: [{ mobiles: mobile, VAR1: orderNumber, VAR2: courierName, VAR3: trackingNumber }],
-    }),
+  const itemRows = (items || []).map((item) => `<tr><td style="padding:8px;border-bottom:1px solid #e2e8f0">${escapeHtml(item.name)}</td><td style="padding:8px;border-bottom:1px solid #e2e8f0">${escapeHtml(item.sku)}</td><td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right">${Number(item.quantity || 0)}</td></tr>`).join("");
+  const html = `<div style="font-family:Arial,sans-serif;color:#172033;max-width:640px;margin:auto"><h2 style="color:#1d4ed8">Your order has been dispatched</h2><p>Hello ${escapeHtml(clientName)},</p><p>Your Fitwell order is on the way. Here are your delivery details:</p><table style="border-collapse:collapse;width:100%;margin:20px 0"><tr><td style="padding:8px;font-weight:bold">Order number</td><td style="padding:8px">${escapeHtml(orderNumber)}</td></tr><tr><td style="padding:8px;font-weight:bold">Courier</td><td style="padding:8px">${escapeHtml(courierName)}</td></tr><tr><td style="padding:8px;font-weight:bold">Tracking ID</td><td style="padding:8px;font-weight:bold;color:#1d4ed8">${escapeHtml(trackingNumber)}</td></tr><tr><td style="padding:8px;font-weight:bold">Dispatch date</td><td style="padding:8px">${escapeHtml(new Date(dispatchDate).toLocaleDateString("en-IN"))}</td></tr><tr><td style="padding:8px;font-weight:bold">Order total</td><td style="padding:8px">₹${Number(total || 0).toFixed(2)}</td></tr></table><h3>Items</h3><table style="border-collapse:collapse;width:100%;text-align:left"><thead><tr style="background:#f1f5f9"><th style="padding:8px">Product</th><th style="padding:8px">SKU</th><th style="padding:8px;text-align:right">Qty</th></tr></thead><tbody>${itemRows}</tbody></table><p style="margin-top:24px">Thank you,<br><strong>Fitwell Sanitary Fittings</strong></p></div>`;
+  const transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpPort === 465,
+    auth: { user: smtpUser, pass: smtpPassword },
   });
-  if (!response.ok) throw new Error(`MSG91 returned ${response.status}`);
+  await transporter.sendMail({
+    from,
+    to: String(email).trim(),
+    subject: `Order ${orderNumber} dispatched`,
+    html,
+  });
   return { status: "sent" };
 }
 
@@ -177,11 +239,13 @@ app.get("/api/retailers", async (req, res) => {
 app.post("/api/retailers", async (req, res) => {
   try {
     const { shopName, ownerName, phone, email, password, address, gstNumber } = req.body || {};
-    if (!shopName?.trim() || !ownerName?.trim() || !phone?.trim() || !email?.trim() || !password) {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!shopName?.trim() || !ownerName?.trim() || !phone?.trim() || !normalizedEmail || !password) {
       return res.status(400).json({ message: "Shop name, owner name, phone, email and password are required." });
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ message: "Enter a valid retailer email address." });
     if (String(password).length < 8) return res.status(400).json({ message: "Retailer password must be at least 8 characters." });
-    const retailer = await Retailer.create({ shopName, ownerName, phone, email, passwordHash: hashPassword(String(password)), address, gstNumber });
+    const retailer = await Retailer.create({ shopName, ownerName, phone, email: normalizedEmail, passwordHash: hashPassword(String(password)), address, gstNumber });
     retailer.passwordHash = undefined;
     res.status(201).json(retailer);
   } catch (error) {
@@ -268,18 +332,8 @@ app.patch("/api/orders/:id/status", async (req, res) => {
     if (!order) return res.status(404).json({ message: "Order not found." });
     if (order.status === "cancelled" || order.status === "delivered") return res.status(400).json({ message: "This order can no longer be changed." });
 
-    if (status === "approved" && order.status !== "approved") {
-      for (const item of order.items) {
-        const product = await Product.findById(item.product);
-        const stockSource = product?.hasVariants ? product.variants.id(item.variantId) : product;
-        if (!product || !stockSource || stockSource.stock < item.quantity) return res.status(400).json({ message: `Insufficient stock for ${item.name} (${item.sku}).` });
-      }
-      for (const item of order.items) {
-        const product = await Product.findById(item.product);
-        const stockSource = product.hasVariants ? product.variants.id(item.variantId) : product;
-        stockSource.stock -= item.quantity;
-        await product.save();
-      }
+    if ((status === "approved" || status === "dispatched") && !order.approvedAt) {
+      await reserveOrderInventory(order);
       order.approvedAt = new Date();
     }
     order.status = status;
@@ -296,16 +350,69 @@ app.patch("/api/orders/:id/shipping", async (req, res) => {
   try {
     const { courierName = "", trackingNumber = "" } = req.body || {};
     if (!String(courierName).trim() || !String(trackingNumber).trim()) return res.status(400).json({ message: "Courier name and tracking number are required." });
-    const order = await Order.findByIdAndUpdate(req.params.id, { courierName: String(courierName).trim(), trackingNumber: String(trackingNumber).trim().toUpperCase(), status: "dispatched", dispatchDate: new Date() }, { new: true, runValidators: true }).populate("retailer", "shopName ownerName phone");
+    const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found." });
-    let notification = { status: "not_configured" };
-    try { notification = await sendTrackingSms({ phone: order.retailer?.phone, orderNumber: order.orderNumber, courierName: order.courierName, trackingNumber: order.trackingNumber }); }
-    catch (error) { console.error("Tracking SMS error:", error.message); notification = { status: "failed", message: error.message }; }
-    order.trackingNotificationStatus = notification.status;
-    if (notification.status === "sent") order.trackingNotificationSentAt = new Date();
+    if (order.status === "cancelled" || order.status === "delivered") return res.status(400).json({ message: "This order can no longer be dispatched." });
+    if (!order.approvedAt) {
+      await reserveOrderInventory(order);
+      order.approvedAt = new Date();
+    }
+    order.courierName = String(courierName).trim();
+    order.trackingNumber = String(trackingNumber).trim().toUpperCase();
+    order.status = "dispatched";
+    order.dispatchDate = order.dispatchDate || new Date();
     await order.save();
-    res.json({ order, notification });
+    await order.populate("retailer", "shopName ownerName email");
+    let emailNotification = { status: "not_configured" };
+    try {
+      emailNotification = await sendTrackingEmail({
+        email: order.retailer?.email,
+        clientName: order.retailer?.ownerName || order.retailer?.shopName || "Customer",
+        orderNumber: order.orderNumber,
+        courierName: order.courierName,
+        trackingNumber: order.trackingNumber,
+        dispatchDate: order.dispatchDate,
+        total: order.total,
+        items: order.items,
+      });
+    } catch (error) { console.error("Tracking email error:", error.message); emailNotification = { status: "failed", message: error.message }; }
+    order.trackingEmailStatus = emailNotification.status;
+    if (emailNotification.status === "sent") order.trackingEmailSentAt = new Date();
+    await order.save();
+    res.json({ order, notification: emailNotification });
   } catch (error) { res.status(400).json({ message: error.message }); }
+});
+
+// ---------------- INVOICES ----------------
+
+app.get("/api/invoices", async (req, res) => {
+  try {
+    const invoices = await Invoice.find().populate("retailer", "shopName ownerName email").sort({ createdAt: -1 });
+    res.json(invoices);
+  } catch (error) { res.status(500).json({ message: error.message }); }
+});
+
+app.post("/api/invoices/from-order/:orderId", async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.orderId).populate("retailer", "shopName ownerName email");
+    if (!order) return res.status(404).json({ message: "Order not found." });
+    if (!["approved", "dispatched", "in_transit", "delivered"].includes(order.status)) return res.status(400).json({ message: "Approve or dispatch the order before creating an invoice." });
+    const existing = await Invoice.findOne({ order: order._id }).populate("retailer", "shopName ownerName email");
+    if (existing) return res.json(existing);
+    const invoice = await Invoice.create({
+      invoiceNumber: `INV-${Date.now().toString(36).toUpperCase()}`,
+      order: order._id,
+      orderNumber: order.orderNumber,
+      transport: order.courierName || "",
+      retailer: order.retailer._id,
+      items: order.items.map((item) => ({ name: item.name, sku: item.sku, quantity: item.quantity, unitPrice: item.unitPrice, total: item.total })),
+      subtotal: order.subtotal,
+      gstRate: order.gstRate,
+      gstAmount: order.gstAmount,
+      total: order.total,
+    });
+    res.status(201).json(await invoice.populate("retailer", "shopName ownerName email"));
+  } catch (error) { res.status(400).json({ message: error.code === 11000 ? "An invoice already exists for this order." : error.message }); }
 });
 
 // ---------------- HEALTH CHECK ----------------
@@ -338,6 +445,7 @@ app.post("/api/categories", async (req, res) => {
     const category = await Category.create({
       name,
       description: req.body.description || "",
+      icon: req.body.icon || "faucet",
     });
 
     res.status(201).json(category);
@@ -363,6 +471,7 @@ app.put("/api/categories/:id", async (req, res) => {
     if (typeof req.body.description === "string") {
       updates.description = req.body.description.trim();
     }
+    if (typeof req.body.icon === "string") updates.icon = req.body.icon.trim();
 
     const category = await Category.findByIdAndUpdate(
       req.params.id,
@@ -434,6 +543,7 @@ app.post("/api/products", async (req, res) => {
       category,
       material,
       description,
+      image,
       hasVariants = true,
       sku,
       purchasePrice,
@@ -475,7 +585,8 @@ app.post("/api/products", async (req, res) => {
 
     if (
       categoryWords.length &&
-      !categoryWords.some((word) => normalizedName.includes(word))
+      !categoryWords.some((word) => normalizedName.includes(word)) &&
+      !(categoryDoc.name.toLowerCase().includes("health faucet") && /\bhf\s+set\b/i.test(name.trim()))
     ) {
       return res.status(400).json({
         message: `Product name "${name.trim()}" does not match category "${categoryDoc.name}".`,
@@ -500,6 +611,7 @@ app.post("/api/products", async (req, res) => {
       category,
       material: material || "",
       description: description || "",
+      image: typeof image === "string" ? image : "",
       hasVariants,
       variants: [],
     };
@@ -674,22 +786,28 @@ app.put("/api/products/:id", async (req, res) => {
       });
     }
 
-    const updatedProduct = await Product.findByIdAndUpdate(
-      id,
-      {
-        $set: {
-          name: name.trim(),
-          category,
-          material: material || "",
-          description: description || "",
-          variants: Array.isArray(variants) ? variants : [],
-        },
-      },
-      {
-        new: true,
-        runValidators: true,
-      }
-    ).populate("category");
+    const updates = {
+      name: name.trim(),
+      category,
+      material: material || "",
+      description: description || "",
+      ...(typeof req.body.image === "string" ? { image: req.body.image } : {}),
+    };
+    if (req.body.hasVariants === false) {
+      Object.assign(updates, {
+        hasVariants: false,
+        sku: String(req.body.sku || "").trim().toUpperCase(),
+        purchasePrice: Number(req.body.purchasePrice),
+        sellingPrice: Number(req.body.sellingPrice),
+        stock: Number(req.body.stock),
+        variants: [],
+      });
+    } else if (Array.isArray(variants)) {
+      updates.variants = variants;
+      if (req.body.hasVariants === true) updates.hasVariants = true;
+    }
+
+    const updatedProduct = await Product.findByIdAndUpdate(id, { $set: updates }, { new: true, runValidators: true }).populate("category");
 
     if (!updatedProduct) {
       return res.status(404).json({

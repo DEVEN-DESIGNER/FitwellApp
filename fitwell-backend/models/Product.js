@@ -85,6 +85,7 @@ const productSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    image: { type: String, default: "", maxlength: 700000 },
 
     // true = multiple variants or size-based variants
     // false = one standalone product, such as a tap

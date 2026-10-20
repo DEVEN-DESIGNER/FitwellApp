@@ -16,6 +16,7 @@ const categorySchema = new mongoose.Schema(
       default: "",
       maxlength: 500,
     },
+    icon: { type: String, trim: true, default: "faucet", maxlength: 40 },
     isActive: {
       type: Boolean,
       default: true,

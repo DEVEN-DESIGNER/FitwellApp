@@ -3,8 +3,13 @@ import AdminLogin from "./AdminLogin";
 import Retailers from "./Retailers";
 import Orders from "./Orders";
 import Dispatch from "./Dispatch";
+import Invoices from "./Invoices";
+import Settings from "./Settings";
+import Reports from "./Reports";
+import ProductImport from "./ProductImport";
+import Pagination from "./Pagination";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import './index.css';
 
 
@@ -44,9 +49,61 @@ const emptyProduct = () => ({
 
   description: "",
 
+  image: "",
+
   variants: [emptyVariant()],
 
 });
+
+const categoryIconOptions = ["faucet", "shower", "pipe", "spray", "drain", "accessories"];
+
+function CategoryGlyph({ name = "faucet", className = "h-5 w-5" }) {
+  const common = { className, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
+  const paths = {
+    faucet: <><path d="M4 10h16v3H4zM7 10V6h7v4M17 13v3a3 3 0 0 1-6 0v-1M4 8h3"/><path d="M18 16v1"/></>,
+    shower: <><path d="M5 9a7 7 0 0 1 14 0M12 9v3"/><path d="M7 13v1m5-1v2m5-2v1M8 18v1m8-1v1"/></>,
+    pipe: <><path d="M4 5h6v5H7v4h10v5h3"/><path d="M4 3v4m4-2v4m10 8h4v4"/></>,
+    spray: <><path d="M4 12h10l4-3v8l-4-3H4zM7 9V6h5"/><path d="M20 10l2-1m-2 4h2m-2 3 2 1"/></>,
+    drain: <><path d="M4 5h16v3H4zM6 8v11m4-11v11m4-11v11m4-11v11M4 19h16"/></>,
+    accessories: <><path d="M5 5h14v14H5zM8 9h8M8 12h8M8 15h5"/></>,
+  };
+  return <svg {...common}>{paths[name] || paths.faucet}</svg>;
+}
+
+function SidebarGlyph({ name }) {
+  const common = { className: "h-[18px] w-[18px]", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
+  const paths = {
+    Dashboard: <><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></>,
+    Categories: <><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="18" cy="17" r="2"/></>,
+    Products: <><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4.5 7.5 7.5 4 7.5-4M12 12v9"/></>,
+    Retailers: <><circle cx="12" cy="8" r="3"/><path d="M5 20a7 7 0 0 1 14 0M8 12h8"/></>,
+    Orders: <><path d="M6 3h12v18H6zM9 7h6M9 11h6M9 15h4"/></>,
+    Inventory: <><path d="M4 7h16v13H4zM8 7V4h8v3M8 11v5m4-5v5m4-5v5"/></>,
+    "Dispatch & Tracking": <><path d="M3 12h14M13 7l5 5-5 5"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/></>,
+    Invoices: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/></>,
+    Settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2.6V20a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H6v-2.6h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 1.8-1.8.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V5h2.6v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v2.6h-.2a1.7 1.7 0 0 0-1.6 1Z"/></>,
+    Reports: <><path d="M5 20V10M12 20V4M19 20v-7"/><path d="M3 20h18"/></>,
+  };
+  return <svg {...common}>{paths[name] || paths.Dashboard}</svg>;
+}
+
+async function compressProductImage(file) {
+  if (!file) return "";
+  if (!file.type.startsWith("image/")) throw new Error("Choose an image file.");
+  const source = await createImageBitmap(file);
+  const scale = Math.min(1, 900 / Math.max(source.width, source.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(source.width * scale));
+  canvas.height = Math.max(1, Math.round(source.height * scale));
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  source.close();
+  const image = canvas.toDataURL("image/jpeg", 0.78);
+  if (image.length > 620000) throw new Error("This image is too large after compression. Choose a smaller image.");
+  return image;
+}
 // Variant fields are driven by the selected category name.
 function getCategoryType(categoryName = "") {
 
@@ -121,6 +178,7 @@ export default function App() {
   const [active, setActive] = useState("Dashboard");
   const [theme, setTheme] = useState(() => localStorage.getItem("fitwell-theme") || "light");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(null);
   const confirmResolverRef = useRef(null);
   const [dashboardSearch, setDashboardSearch] = useState("");
@@ -185,6 +243,8 @@ export default function App() {
 
     description: "",
 
+    icon: "faucet",
+
   });
 
   const [editingCategory, setEditingCategory] = useState(null);
@@ -192,6 +252,7 @@ export default function App() {
   const categoryFormRef = useRef(null);
 
   const categoryNameInputRef = useRef(null);
+  const productImageInputRef = useRef(null);
 
   const [showProductForm, setShowProductForm] = useState(false);
 
@@ -200,6 +261,10 @@ export default function App() {
   const [viewingProduct, setViewingProduct] = useState(null);
 
   const [search, setSearch] = useState("");
+  const [productsPage, setProductsPage] = useState(1);
+  const [productsPageSize, setProductsPageSize] = useState(10);
+  const [dashboardPage, setDashboardPage] = useState(1);
+  const [dashboardPageSize, setDashboardPageSize] = useState(10);
 
   const [loading, setLoading] = useState(false);
 
@@ -211,7 +276,7 @@ export default function App() {
 
 
 
-  async function request(path, options = {}) {
+  const request = useCallback(async (path, options = {}) => {
 
     const response = await fetch(`${API}${path}`, {
 
@@ -250,9 +315,9 @@ export default function App() {
 
     return data;
 
-  }
+  }, [adminSession]);
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
 
     setLoading(true);
 
@@ -286,15 +351,15 @@ export default function App() {
 
     }
 
-  }
+  }, [request, setError]);
 
 
 
   useEffect(() => {
-
-    if (adminSession) window.setTimeout(() => loadData(), 0);
-
-  }, [adminSession]);
+    if (!adminSession) return undefined;
+    const timer = window.setTimeout(loadData, 0);
+    return () => window.clearTimeout(timer);
+  }, [adminSession, loadData]);
 
   if (!adminSession) return <AdminLogin onLogin={handleLogin} />;
 
@@ -312,7 +377,7 @@ export default function App() {
 
   function resetCategoryForm() {
 
-    setCategoryForm({ name: "", description: "" });
+    setCategoryForm({ name: "", description: "", icon: "faucet" });
 
     setEditingCategory(null);
 
@@ -339,6 +404,8 @@ export default function App() {
         name: categoryForm.name.trim(),
 
         description: categoryForm.description.trim(),
+
+        icon: categoryForm.icon,
 
       };
 
@@ -399,6 +466,8 @@ export default function App() {
       name: category.name || "",
 
       description: category.description || "",
+
+      icon: category.icon || "faucet",
 
     });
 
@@ -613,6 +682,8 @@ export default function App() {
       material: product.material || "",
 
       description: product.description || "",
+
+      image: product.image || "",
 
       variants: variants.length ? variants : [emptyVariant()],
 
@@ -830,6 +901,8 @@ export default function App() {
 
         description: form.description.trim(),
 
+        image: form.image || "",
+
         variants,
 
       };
@@ -918,16 +991,7 @@ export default function App() {
       .includes(search.toLowerCase());
 
   });
-
-
-
-  const totalVariants = products.reduce(
-
-    (sum, product) => sum + (product.variants?.length || 0),
-
-    0
-
-  );
+  const paginatedProducts = filteredProducts.slice((productsPage - 1) * productsPageSize, productsPage * productsPageSize);
 
 
 
@@ -976,13 +1040,18 @@ export default function App() {
       (stockFilter === "low" && item.stock > 0 && item.stock <= 10);
     return matchesSearch && matchesFilter;
   });
+  const dashboardAlertItems = dashboardFilteredItems.filter((item) => item.stock <= 10);
+  const paginatedDashboardItems = dashboardAlertItems.slice(
+    (dashboardPage - 1) * dashboardPageSize,
+    dashboardPage * dashboardPageSize
+  );
 
   return (
 
 
     
     <div className={`min-h-screen bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-bold [&_h3]:text-lg [&_h3]:font-bold [&_p]:text-slate-500 [&_label]:flex [&_label]:flex-col [&_label]:gap-2 [&_label]:text-sm [&_label]:font-semibold [&_input]:rounded-xl [&_input]:border [&_input]:border-slate-200 [&_input]:bg-white [&_input]:px-3 [&_input]:py-2.5 [&_input]:text-sm [&_input]:outline-none [&_input:focus]:border-blue-500 [&_input:focus]:ring-2 [&_input:focus]:ring-blue-100 [&_select]:rounded-xl [&_select]:border [&_select]:border-slate-200 [&_select]:bg-white [&_select]:px-3 [&_select]:py-2.5 [&_select]:text-sm [&_button]:cursor-pointer [&_button:disabled]:cursor-not-allowed ${theme === "dark" ? "dark" : ""}`}>
-<aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-slate-950 px-5 py-6 text-white shadow-xl">
+<aside className={`app-sidebar fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-slate-950 px-5 py-6 text-white shadow-xl ${sidebarOpen ? "mobile-open" : ""}`}>
 
         <div className="mb-10 flex items-center gap-3">
 
@@ -995,6 +1064,8 @@ export default function App() {
             <span>ADMIN PANEL</span>
 
           </div>
+
+          <button type="button" className="sidebar-close-button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}>×</button>
 
         </div>
 
@@ -1024,17 +1095,22 @@ export default function App() {
 
           ["Settings", "⚙"],
 
-        ].map(([label, icon]) => (
+          ["Reports", "R"],
+
+        ].map(([label]) => (
 
           <button
 
             key={label}
 
-            className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white ${active === label ? "bg-blue-600 text-white shadow-md shadow-blue-950/30" : ""}`}
+            className={`sidebar-nav-item mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white ${active === label ? "active bg-blue-600 text-white shadow-md shadow-blue-950/30" : ""}`}
 
             onClick={() => {
 
               setActive(label);
+              setSidebarOpen(false);
+
+              if (label === "Products") loadData();
 
               setError("");
 
@@ -1044,9 +1120,9 @@ export default function App() {
 
           >
 
-            <span>{icon}</span>
+            <span className="sidebar-nav-icon"><SidebarGlyph name={label} /></span>
 
-            {label}
+            <span className="sidebar-nav-label">{label}</span>
 
           </button>
 
@@ -1078,9 +1154,14 @@ export default function App() {
 
       <main className="min-h-screen min-w-0 ml-64 px-8">
 
+        {sidebarOpen && <button type="button" aria-label="Close navigation" className="sidebar-mobile-overlay fixed inset-0 z-20" onClick={() => setSidebarOpen(false)} />}
         <header className="sticky top-0 z-20 -mx-8 mb-7 flex items-center justify-between border-b border-slate-200 bg-white/95 px-8 py-4 shadow-sm backdrop-blur-xl transition-colors dark:border-slate-800 dark:bg-slate-950/95">
           <div className="min-w-0">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Fitwell / Admin / {active}</span>
+            <button type="button" className="sidebar-menu-button mr-3 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-slate-700 dark:text-slate-200" aria-label={sidebarOpen ? "Close navigation" : "Open navigation"} onClick={() => setSidebarOpen((open) => !open)}>
+              <span aria-hidden="true">{sidebarOpen ? "×" : "☰"}</span>
+            </button>
+            <span className="header-breadcrumb text-xs font-medium text-slate-500 dark:text-slate-400">Fitwell / Admin / {active}</span>
+            <span className="mobile-header-brand"><strong>FITWELL</strong><small>ADMIN PANEL</small></span>
             <h1 className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{active}</h1>
           </div>
           <div className="flex items-center gap-4">
@@ -1089,7 +1170,12 @@ export default function App() {
             </button>
             <div className="relative">
               <button className="flex items-center gap-3 rounded-xl border border-transparent px-2 py-1.5 text-left transition hover:border-slate-200 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:border-slate-700 dark:hover:bg-slate-900" onClick={() => setProfileOpen((open) => !open)} aria-expanded={profileOpen} aria-label="Open profile menu">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 font-bold text-blue-700 ring-1 ring-blue-200 dark:from-blue-900 dark:to-indigo-900 dark:text-blue-200 dark:ring-blue-800">F</span>
+                <span className="header-profile-avatar flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 font-bold text-blue-700 ring-1 ring-blue-200 dark:from-blue-900 dark:to-indigo-900 dark:text-blue-200 dark:ring-blue-800">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="8" r="3.5" />
+                    <path d="M5 20a7 7 0 0 1 14 0" />
+                  </svg>
+                </span>
                 <span className="hidden min-w-0 flex-col text-sm sm:flex"><strong className="truncate text-slate-800 dark:text-slate-100">Fitwell Admin</strong><small className="text-slate-500 dark:text-slate-400">Administrator</small></span>
                 <span className={`text-xs text-slate-500 transition-transform dark:text-slate-400 ${profileOpen ? "rotate-180" : ""}`}>⌄</span>
               </button>
@@ -1120,15 +1206,15 @@ export default function App() {
 
         {active === "Dashboard" && (
           <div className="space-y-6 pb-8">
-            <section className="flex flex-wrap items-center justify-between gap-5 rounded-2xl bg-gradient-to-r from-blue-700 to-blue-500 px-7 py-7 text-white shadow-lg shadow-blue-200">
+            <section className="dashboard-welcome-card flex flex-wrap items-center justify-between gap-5 rounded-2xl bg-gradient-to-r from-blue-700 to-blue-500 px-7 py-7 text-white shadow-lg shadow-blue-200">
               <div>
-                <span className="text-xs font-bold uppercase tracking-[.18em] text-blue-600">FITWELL · BUSINESS OVERVIEW</span>
-                <h2>Good to see you, Admin 👋</h2>
-                <p>Monitor your products and inventory health in one place.</p>
+                <span className="dashboard-welcome-eyebrow text-xs font-bold uppercase tracking-[.18em]">FITWELL · BUSINESS OVERVIEW</span>
+                <h2 className="dashboard-welcome-title">Good to see you, Admin 👋</h2>
+                <p className="dashboard-welcome-description">Monitor your products and inventory health in one place.</p>
               </div>
               <div className="flex flex-wrap gap-3">
-                <button className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50" onClick={loadData} disabled={loading}>{loading ? "Refreshing..." : "↻ Refresh"}</button>
-                <button className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50" onClick={openProductForm}>+ Add Product</button>
+                <button className="dashboard-welcome-button inline-flex items-center justify-center rounded-xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50" onClick={loadData} disabled={loading}>{loading ? "Refreshing..." : "↻ Refresh"}</button>
+                <button className="dashboard-welcome-button inline-flex items-center justify-center rounded-xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50" onClick={openProductForm}>+ Add Product</button>
               </div>
             </section>
 
@@ -1152,18 +1238,21 @@ export default function App() {
               <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><div><h3>Stock Watchlist</h3><p>Live stock calculated from saved products</p></div><button className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => { setStockFilter("all"); setDashboardSearch(""); }}>Reset filters</button></div>
               <div className="mb-4 flex flex-wrap gap-3 [&>input]:min-w-[220px] [&>input]:flex-1 [&>input]:rounded-xl [&>input]:border [&>input]:border-slate-200 [&>input]:px-4 [&>input]:py-3 [&>select]:rounded-xl [&>select]:border [&>select]:border-slate-200 [&>select]:bg-white [&>select]:px-4 [&>select]:py-3"><input value={dashboardSearch} onChange={(e) => setDashboardSearch(e.target.value)} placeholder="Search product, SKU or category..."/><select value={stockFilter} onChange={(e) => setStockFilter(e.target.value)}><option value="all">All stock alerts</option><option value="low">Low stock</option><option value="out">Out of stock</option></select></div>
               <div className="w-full overflow-x-auto rounded-xl border border-slate-100"><table className="w-full border-collapse text-left text-sm"><thead><tr><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">PRODUCT</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">CATEGORY</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">SKU</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">SIZE</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">STOCK</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">STATUS</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">SUGGESTION</th></tr></thead><tbody>
-                {dashboardFilteredItems.filter((item) => item.stock <= 10).map((item) => <tr key={item.id}><td className="border-t border-slate-100 px-4 py-3 text-slate-600"><strong>{item.name}</strong></td><td className="border-t border-slate-100 px-4 py-3 text-slate-600">{item.category}</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600">{item.sku}</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600">{item.size}</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600"><strong>{item.stock}</strong> pcs</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600"><span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${item.stock <= 0 ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700"}`}>{item.stock <= 0 ? "Out of Stock" : "Low Stock"}</span></td><td className="border-t border-slate-100 px-4 py-3 text-slate-600"><button className="mt-2 text-left text-sm font-semibold text-blue-700 hover:underline" onClick={() => setActive("Inventory")}>{item.stock <= 0 ? "Restock urgently" : "Plan replenishment"}</button></td></tr>)}
-                {!dashboardFilteredItems.some((item) => item.stock <= 10) && <tr><td colSpan="7" className="py-8 text-center text-sm text-slate-500">{stockFilter === "all" ? "Great! No low-stock or out-of-stock products." : "No matching stock alerts found."}</td></tr>}
+                {paginatedDashboardItems.map((item) => <tr key={item.id}><td className="border-t border-slate-100 px-4 py-3 text-slate-600"><strong>{item.name}</strong></td><td className="border-t border-slate-100 px-4 py-3 text-slate-600">{item.category}</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600">{item.sku}</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600">{item.size}</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600"><strong>{item.stock}</strong> pcs</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600"><span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${item.stock <= 0 ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700"}`}>{item.stock <= 0 ? "Out of Stock" : "Low Stock"}</span></td><td className="border-t border-slate-100 px-4 py-3 text-slate-600"><button className="mt-2 text-left text-sm font-semibold text-blue-700 hover:underline" onClick={() => setActive("Inventory")}>{item.stock <= 0 ? "Restock urgently" : "Plan replenishment"}</button></td></tr>)}
+                {!dashboardAlertItems.length && <tr><td colSpan="7" className="py-8 text-center text-sm text-slate-500">{stockFilter === "all" ? "Great! No low-stock or out-of-stock products." : "No matching stock alerts found."}</td></tr>}
               </tbody></table></div>
+              {!loading && <Pagination total={dashboardAlertItems.length} page={dashboardPage} pageSize={dashboardPageSize} onPageChange={setDashboardPage} onPageSizeChange={setDashboardPageSize} />}
             </section>
 
-            <section className="grid gap-5 lg:grid-cols-2">
-              <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><h3>Quick Actions</h3><p>Jump directly to common tasks.</p>
-                <button onClick={openProductForm}><span>＋</span><div><strong>Add New Product</strong><small>Create a product and SKU</small></div><span>→</span></button>
-                <button onClick={() => setActive("Inventory")}><span>▦</span><div><strong>Manage Inventory</strong><small>Review and adjust stock</small></div><span>→</span></button>
-                <button onClick={() => setActive("Categories")}><span>▤</span><div><strong>Manage Categories</strong><small>Organize your catalogue</small></div><span>→</span></button>
+            <section className="dashboard-bottom-grid grid gap-5 lg:grid-cols-2">
+              <div className="quick-actions-card mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><h3>Quick Actions</h3><p>Jump directly to common tasks.</p>
+                <div className="quick-actions-grid">
+                  <button className="quick-action" onClick={openProductForm}><span className="quick-action-icon">＋</span><span className="quick-action-copy"><strong>Add New Product</strong><small>Create a product and SKU</small></span><span className="quick-action-arrow">→</span></button>
+                  <button className="quick-action" onClick={() => setActive("Inventory")}><span className="quick-action-icon">▦</span><span className="quick-action-copy"><strong>Manage Inventory</strong><small>Review and adjust stock</small></span><span className="quick-action-arrow">→</span></button>
+                  <button className="quick-action" onClick={() => setActive("Categories")}><span className="quick-action-icon">▤</span><span className="quick-action-copy"><strong>Manage Categories</strong><small>Organize your catalogue</small></span><span className="quick-action-arrow">→</span></button>
+                </div>
               </div>
-              <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm bg-blue-50"><span className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-xl text-blue-600 shadow-sm">✦</span><h3>Inventory Recommendation</h3><p>{outOfStockItems.length > 0 ? `Prioritize ${outOfStockItems.length} out-of-stock SKU(s) first, then review low-stock products.` : lowStockItems.length > 0 ? `Review ${lowStockItems.length} low-stock SKU(s) and plan replenishment before they run out.` : "No critical stock alerts at the current 10-unit threshold. Keep reviewing stock movements regularly."}</p><button className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setActive("Inventory")}>Open Inventory →</button></div>
+              <div className="dashboard-reports-card mb-6 rounded-2xl border p-6 shadow-sm"><div className="dashboard-reports-heading"><span className="dashboard-reports-icon">▥</span><div><h3>Reports</h3><p>Business insights at a glance</p></div></div><p className="dashboard-reports-description">Review sales, inventory, product performance, and business activity reports.</p><button className="dashboard-reports-button inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold shadow-sm transition" onClick={() => setActive("Reports")}>Open Reports <span aria-hidden="true">→</span></button></div>
             </section>
           </div>
         )}
@@ -1172,7 +1261,7 @@ export default function App() {
 
           <>
 
-            <section className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <section className="products-hero mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 
               <div>
 
@@ -1260,6 +1349,14 @@ export default function App() {
 
 
 
+                <label>
+                  Category icon
+                  <select value={categoryForm.icon || "faucet"} onChange={(e) => setCategoryForm((old) => ({ ...old, icon: e.target.value }))}>
+                    {categoryIconOptions.map((icon) => <option key={icon} value={icon}>{icon[0].toUpperCase() + icon.slice(1)}</option>)}
+                  </select>
+                  <span className="mt-2 inline-flex items-center gap-2 text-sm text-slate-500"><CategoryGlyph name={categoryForm.icon} /> Preview</span>
+                </label>
+
                 <div className="mt-6 flex flex-wrap items-center justify-end gap-3 md:col-span-2">
 
                   <button className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50" disabled={saving}>
@@ -1302,7 +1399,7 @@ export default function App() {
 
 
 
-            <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <section className="products-table-panel mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 
               <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
 
@@ -1376,7 +1473,7 @@ export default function App() {
 
                           <tr key={category._id}>
 
-                            <td className="border-t border-slate-100 px-4 py-3 text-slate-600"><strong>{category.name}</strong></td>
+                            <td className="border-t border-slate-100 px-4 py-3 text-slate-600"><span className="inline-flex items-center gap-2"><span className="rounded-lg bg-blue-50 p-2 text-blue-700"><CategoryGlyph name={category.icon} /></span><strong>{category.name}</strong></span></td>
 
                             <td className="border-t border-slate-100 px-4 py-3 text-slate-600">{category.description || "—"}</td>
 
@@ -1534,6 +1631,8 @@ export default function App() {
 
 
 
+            <ProductImport categories={activeCategories} token={adminSession} onImported={loadData} />
+
             {showProductForm && (
 
               <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm scroll-mt-28" id="product-form">
@@ -1643,6 +1742,23 @@ export default function App() {
                       />
 
                     </label>
+
+                    <div className="md:col-span-2">
+                      <span className="mb-2 block text-sm font-semibold">Product image</span>
+                      <input ref={productImageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={async (event) => {
+                        try { updateProduct("image", await compressProductImage(event.target.files?.[0])); }
+                        catch (err) { notifyError(err.message); }
+                        finally { event.target.value = ""; }
+                      }} />
+                      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-slate-300 p-3 dark:border-slate-600">
+                        {form.image ? <img src={form.image} alt="Product preview" className="h-20 w-20 rounded-xl border border-slate-200 object-cover" /> : <span className="flex h-20 w-20 items-center justify-center rounded-xl bg-slate-100 text-xs font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-300">No image</span>}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button type="button" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" onClick={() => productImageInputRef.current?.click()}>{form.image ? "Change image" : "Choose image"}</button>
+                          {form.image && <button type="button" className="rounded-lg px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40" onClick={() => updateProduct("image", "")}>Remove image</button>}
+                          <span className="w-full text-xs text-slate-500 dark:text-slate-400">JPEG, PNG, or WebP. Image is resized before saving.</span>
+                        </div>
+                      </div>
+                    </div>
 
                   </div>
 
@@ -1994,7 +2110,7 @@ export default function App() {
 
                   value={search}
 
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => { setSearch(e.target.value); setProductsPage(1); }}
 
                   placeholder="Search products or categories..."
 
@@ -2010,9 +2126,11 @@ export default function App() {
 
               ) : (
 
-                <ProductTable products={filteredProducts} onView={setViewingProduct} onEdit={editProduct} onDelete={deleteProduct} />
+                <ProductTable products={paginatedProducts} onView={setViewingProduct} onEdit={editProduct} onDelete={deleteProduct} />
 
               )}
+
+              {!loading && <Pagination total={filteredProducts.length} page={productsPage} pageSize={productsPageSize} onPageChange={setProductsPage} onPageSizeChange={setProductsPageSize} />}
 
             </section>
 
@@ -2022,7 +2140,7 @@ export default function App() {
 
 
 
-     {active === "Inventory" && <Inventory />}
+     {active === "Inventory" && <Inventory onInventoryUpdated={loadData} />}
 
      {active === "Retailers" && <Retailers />}
 
@@ -2030,9 +2148,15 @@ export default function App() {
 
      {active === "Dispatch & Tracking" && <Dispatch />}
 
+     {active === "Invoices" && <Invoices />}
+
+     {active === "Settings" && <Settings theme={theme} onToggleTheme={toggleTheme} />}
+
+     {active === "Reports" && <Reports />}
 
 
-{!["Dashboard", "Categories", "Products", "Inventory", "Retailers", "Orders", "Dispatch & Tracking"].includes(active) && (
+
+{!["Dashboard", "Categories", "Products", "Inventory", "Retailers", "Orders", "Dispatch & Tracking", "Invoices", "Settings", "Reports"].includes(active) && (
 
   <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 
@@ -2080,6 +2204,7 @@ export default function App() {
 
               </div>
 
+              {viewingProduct.image && <img src={viewingProduct.image} alt={viewingProduct.name} className="mb-4 max-h-56 rounded-xl object-contain" />}
               <div className="" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "8px 24px" }}>
 
                 <p><strong>Name:</strong> {viewingProduct.name || "—"}</p>
@@ -2092,7 +2217,10 @@ export default function App() {
 
               </div>
 
-              <h4>Variants ({(viewingProduct.variants || []).length})</h4>
+              <div className="mb-3 mt-6 flex flex-wrap items-center justify-between gap-2">
+                <div><h4 className="mb-1">Available options</h4><p className="text-sm text-slate-500 dark:text-slate-300">Choose by size and the listed fittings. SKU is shown below each combination.</p></div>
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700 dark:bg-blue-950 dark:text-blue-200">{(viewingProduct.variants || []).length} options</span>
+              </div>
 
               {(viewingProduct.variants || []).length ? (
 
@@ -2101,22 +2229,26 @@ export default function App() {
                   <table className="w-full border-collapse text-left text-sm">
 
                     <thead><tr>
-                      {viewingVariantFields.size && <th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">SIZE</th>}
-                      {viewingVariantFields.nut && <th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">NUT</th>}
-                      {viewingVariantFields.inner && <th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">INNER</th>}
-                      {viewingVariantFields.glassy && <th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">GLASSY</th>}
-                      <th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">SKU</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">PURCHASE</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">SELLING</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">STOCK</th>
+                      {viewingVariantFields.size && <th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">Size</th>}
+                      <th className="min-w-64 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">Fitting combination</th>
+                      <th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">Purchase price</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">Selling price</th><th className="whitespace-nowrap bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">In stock</th>
                     </tr></thead>
 
                     <tbody>{viewingProduct.variants.map((variant, index) => (
 
                       <tr key={variant._id || variant.sku || index}>
 
-                        {viewingVariantFields.size && <td className="border-t border-slate-100 px-4 py-3 text-slate-600">{variant.size || "—"}</td>}
-                        {viewingVariantFields.nut && <td className="border-t border-slate-100 px-4 py-3 text-slate-600">{variant.nut || "—"}</td>}
-                        {viewingVariantFields.inner && <td className="border-t border-slate-100 px-4 py-3 text-slate-600">{variant.inner || "—"}</td>}
-                        {viewingVariantFields.glassy && <td className="border-t border-slate-100 px-4 py-3 text-slate-600">{variant.glassy || "—"}</td>}
-                        <td className="border-t border-slate-100 px-4 py-3 text-slate-600">{variant.sku || "—"}</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600">₹{Number(variant.purchasePrice || 0).toFixed(2)}</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600">₹{Number(variant.sellingPrice || 0).toFixed(2)}</td><td className="border-t border-slate-100 px-4 py-3 text-slate-600">{Number(variant.stock || 0)}</td>
+                        {viewingVariantFields.size && <td className="border-t border-slate-100 px-4 py-3 align-top font-semibold text-slate-800">{variant.size || "—"}</td>}
+                        <td className="border-t border-slate-100 px-4 py-3 align-top">
+                          <div className="flex flex-wrap gap-1.5">
+                            {viewingVariantFields.nut && variant.nut && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800 dark:bg-blue-950 dark:text-blue-200">{variant.nut}</span>}
+                            {viewingVariantFields.inner && variant.inner && <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-800 dark:bg-violet-950 dark:text-violet-200">{variant.inner}</span>}
+                            {viewingVariantFields.glassy && variant.glassy && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">{variant.glassy}</span>}
+                            {!variant.nut && !variant.inner && !variant.glassy && <span className="text-slate-500 dark:text-slate-300">Standard option</span>}
+                          </div>
+                          {variant.sku && <div className="mt-1.5 break-all text-xs text-slate-400 dark:text-slate-300">SKU: {variant.sku}</div>}
+                        </td>
+                        <td className="border-t border-slate-100 px-4 py-3 align-top text-slate-600">₹{Number(variant.purchasePrice || 0).toFixed(2)}</td><td className="border-t border-slate-100 px-4 py-3 align-top font-semibold text-slate-800">₹{Number(variant.sellingPrice || 0).toFixed(2)}</td><td className="border-t border-slate-100 px-4 py-3 align-top"><span className="inline-flex min-w-8 justify-center rounded-full bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-100">{Number(variant.stock || 0)}</span></td>
 
                       </tr>
 
@@ -2200,24 +2332,6 @@ export default function App() {
 
 
 
-function Stat({ title, value }) {
-
-  return (
-
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-
-      <div className="text-sm font-medium text-slate-500">{title}</div>
-
-      <h2>{value}</h2>
-
-    </div>
-
-  );
-
-}
-
-
-
 function ProductTable({ products, onView, onEdit, onDelete }) {
 
   return (
@@ -2280,7 +2394,7 @@ function ProductTable({ products, onView, onEdit, onDelete }) {
 
                   <div className="flex items-center gap-3">
 
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 font-bold text-blue-700">F</div>
+                    {product.image ? <img src={product.image} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 font-bold text-blue-700">F</div>}
 
                     <strong>{product.name}</strong>
 

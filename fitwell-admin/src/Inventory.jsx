@@ -1,6 +1,8 @@
 
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import Pagination from "./Pagination";
 
 
 
@@ -10,175 +12,175 @@ const API = "http://localhost:5000/api";
 
 const styles = {
 
-  page: { display: "grid", gap: 20, color: "#172033" },
+  page: { display: "grid", gap: 20, color: "#172033" },
 
-  cards: {
+  cards: {
 
-    display: "grid",
+    display: "grid",
 
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
 
-    gap: 14,
+    gap: 14,
 
-  },
+  },
 
-  card: {
+  card: {
 
-    background: "#fff",
+    background: "#fff",
 
-    border: "1px solid #e4e9f1",
+    border: "1px solid #e4e9f1",
 
-    borderRadius: 14,
+    borderRadius: 14,
 
-    padding: 18,
+    padding: 18,
 
-    boxShadow: "0 3px 12px rgba(20,40,80,.035)",
+    boxShadow: "0 3px 12px rgba(20,40,80,.035)",
 
-  },
+  },
 
-  panel: {
+  panel: {
 
-    background: "#fff",
+    background: "#fff",
 
-    border: "1px solid #e4e9f1",
+    border: "1px solid #e4e9f1",
 
-    borderRadius: 14,
+    borderRadius: 14,
 
-    padding: 20,
+    padding: 20,
 
-    minWidth: 0,
+    minWidth: 0,
 
-  },
+  },
 
-  input: {
+  input: {
 
-    width: "100%",
+    width: "100%",
 
-    boxSizing: "border-box",
+    boxSizing: "border-box",
 
-    padding: "11px 12px",
+    padding: "11px 12px",
 
-    border: "1px solid #d8deea",
+    border: "1px solid #d8deea",
 
-    borderRadius: 8,
+    borderRadius: 8,
 
-    background: "#fff",
+    background: "#fff",
 
-    color: "#172033",
+    color: "#172033",
 
-    fontSize: 14,
+    fontSize: 14,
 
-  },
+  },
 
-  label: {
+  label: {
 
-    display: "grid",
+    display: "grid",
 
-    gap: 7,
+    gap: 7,
 
-    fontSize: 13,
+    fontSize: 13,
 
-    fontWeight: 600,
+    fontWeight: 600,
 
-    color: "#46536a",
+    color: "#46536a",
 
-  },
+  },
 
-  primary: {
+  primary: {
 
-    border: 0,
+    border: 0,
 
-    background: "#175cd3",
+    background: "#175cd3",
 
-    color: "#fff",
+    color: "#fff",
 
-    borderRadius: 8,
+    borderRadius: 8,
 
-    padding: "11px 15px",
+    padding: "11px 15px",
 
-    cursor: "pointer",
+    cursor: "pointer",
 
-    fontWeight: 600,
+    fontWeight: 600,
 
-  },
+  },
 
-  secondary: {
+  secondary: {
 
-    border: "1px solid #d8deea",
+    border: "1px solid #d8deea",
 
-    background: "#fff",
+    background: "#fff",
 
-    color: "#344054",
+    color: "#344054",
 
-    borderRadius: 8,
+    borderRadius: 8,
 
-    padding: "10px 14px",
+    padding: "10px 14px",
 
-    cursor: "pointer",
+    cursor: "pointer",
 
-    fontWeight: 600,
+    fontWeight: 600,
 
-  },
+  },
 
-  tableWrap: { width: "100%", overflowX: "auto" },
+  tableWrap: { width: "100%", overflowX: "auto" },
 
-  table: {
+  table: {
 
-    width: "100%",
+    width: "100%",
 
-    borderCollapse: "collapse",
+    borderCollapse: "collapse",
 
-    textAlign: "left",
+    textAlign: "left",
 
-    fontSize: 13,
+    fontSize: 13,
 
-    whiteSpace: "nowrap",
+    whiteSpace: "nowrap",
 
-  },
+  },
 
-  th: {
+  th: {
 
-    padding: "13px 12px",
+    padding: "13px 12px",
 
-    background: "#f5f8fc",
+    background: "#f5f8fc",
 
-    color: "#667085",
+    color: "#667085",
 
-    fontSize: 11,
+    fontSize: 11,
 
-    letterSpacing: ".04em",
+    letterSpacing: ".04em",
 
-    borderBottom: "1px solid #e5eaf2",
+    borderBottom: "1px solid #e5eaf2",
 
-  },
+  },
 
-  td: {
+  td: {
 
-    padding: "14px 12px",
+    padding: "14px 12px",
 
-    borderBottom: "1px solid #edf0f5",
+    borderBottom: "1px solid #edf0f5",
 
-    color: "#344054",
+    color: "#344054",
 
-  },
+  },
 
-  badge: {
+  badge: {
 
-    display: "inline-block",
+    display: "inline-block",
 
-    padding: "5px 9px",
+    padding: "5px 9px",
 
-    borderRadius: 20,
+    borderRadius: 20,
 
-    background: "#eaf2ff",
+    background: "#eaf2ff",
 
-    color: "#175cd3",
+    color: "#175cd3",
 
-    fontSize: 11,
+    fontSize: 11,
 
-    fontWeight: 700,
+    fontWeight: 700,
 
-  },
+  },
 
 };
 
@@ -186,37 +188,37 @@ const styles = {
 
 async function apiRequest(path, options = {}) {
 
-  const response = await fetch(`${API}${path}`, {
+  const response = await fetch(`${API}${path}`, {
 
-    ...options,
+    ...options,
 
-    headers: {
+    headers: {
 
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
 
-      Authorization: `Bearer ${localStorage.getItem("fitwell-admin-token")}`,
+      Authorization: `Bearer ${localStorage.getItem("fitwell-admin-token")}`,
 
-      ...options.headers,
+      ...options.headers,
 
-    },
+    },
 
-  });
-
-
-
-  const data = await response.json().catch(() => ({}));
+  });
 
 
 
-  if (!response.ok) {
-
-    throw new Error(data.message || `Request failed (${response.status})`);
-
-  }
+  const data = await response.json().catch(() => ({}));
 
 
 
-  return data;
+  if (!response.ok) {
+
+    throw new Error(data.message || `Request failed (${response.status})`);
+
+  }
+
+
+
+  return data;
 
 }
 
@@ -224,15 +226,15 @@ async function apiRequest(path, options = {}) {
 
 function money(value) {
 
-  return new Intl.NumberFormat("en-IN", {
+  return new Intl.NumberFormat("en-IN", {
 
-    style: "currency",
+    style: "currency",
 
-    currency: "INR",
+    currency: "INR",
 
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 2,
 
-  }).format(Number(value || 0));
+  }).format(Number(value || 0));
 
 }
 
@@ -240,19 +242,19 @@ function money(value) {
 
 function dateTime(value) {
 
-  if (!value) return "—";
+  if (!value) return "—";
 
 
 
-  const date = new Date(value);
+  const date = new Date(value);
 
 
 
-  return Number.isNaN(date.getTime())
+  return Number.isNaN(date.getTime())
 
-    ? "—"
+    ? "—"
 
-    : date.toLocaleString("en-IN");
+    : date.toLocaleString("en-IN");
 
 }
 
@@ -260,369 +262,377 @@ function dateTime(value) {
 
 function stockColor(stock) {
 
-  if (Number(stock) <= 0) return "#b42318";
+  if (Number(stock) <= 0) return "#b42318";
 
-  if (Number(stock) <= 10) return "#b54708";
+  if (Number(stock) <= 10) return "#b54708";
 
-  return "#027a48";
+  return "#027a48";
 
 }
 
 
 
-export default function Inventory() {
+export default function Inventory({ onInventoryUpdated }) {
 
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState([]);
 
-  const [movements, setMovements] = useState([]);
+  const [movements, setMovements] = useState([]);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState("");
+  const [stockPage, setStockPage] = useState(1);
+  const [stockPageSize, setStockPageSize] = useState(10);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(10);
 
-  const [categoryFilter, setCategoryFilter] = useState("ALL");
+  const [categoryFilter, setCategoryFilter] = useState("ALL");
 
-  const [stockFilter, setStockFilter] = useState("ALL");
+  const [stockFilter, setStockFilter] = useState("ALL");
 
-  const [activeTab, setActiveTab] = useState("stock");
+  const [activeTab, setActiveTab] = useState("stock");
 
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
-  const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
 
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const [error, setError] = useState("");
+  const [error, setError] = useState("");
 
-  const [success, setSuccess] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState({
 
-    movementType: "IN",
+    movementType: "IN",
 
-    quantity: "",
+    quantity: "",
 
-    note: "",
+    note: "",
 
-  });
+  });
 
 
 
-  const loadInventory = useCallback(async () => {
+  const loadInventory = useCallback(async () => {
 
-    setLoading(true);
+    setLoading(true);
 
-    setError("");
+    setError("");
 
 
 
-    try {
+    try {
 
-      const [itemData, movementData] = await Promise.all([
+      const [itemData, movementData] = await Promise.all([
 
-        apiRequest("/inventory/items"),
+        apiRequest("/inventory/items"),
 
-        apiRequest("/inventory/movements"),
+        apiRequest("/inventory/movements"),
 
-      ]);
+      ]);
 
 
 
-      setItems(Array.isArray(itemData) ? itemData : []);
+      setItems(Array.isArray(itemData) ? itemData : []);
 
-      setMovements(Array.isArray(movementData) ? movementData : []);
+      setMovements(Array.isArray(movementData) ? movementData : []);
 
-    } catch (err) {
+    } catch (err) {
 
-      setError(err.message);
+      setError(err.message);
 
-    } finally {
+    } finally {
 
-      setLoading(false);
+      setLoading(false);
 
-    }
+    }
 
-  }, []);
+  }, []);
 
 
 
-  useEffect(() => {
+  useEffect(() => {
+    const timer = window.setTimeout(loadInventory, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadInventory]);
 
-    loadInventory();
 
-  }, [loadInventory]);
 
+  const categories = useMemo(
 
+    () => [...new Set(items.map((item) => item.categoryName).filter(Boolean))]
 
-  const categories = useMemo(
+      .sort((a, b) => a.localeCompare(b)),
 
-    () => [...new Set(items.map((item) => item.categoryName).filter(Boolean))]
+    [items]
 
-      .sort((a, b) => a.localeCompare(b)),
+  );
 
-    [items]
 
-  );
 
+  const totalStock = useMemo(
 
+    () => items.reduce((sum, item) => sum + Number(item.stock || 0), 0),
 
-  const totalStock = useMemo(
+    [items]
 
-    () => items.reduce((sum, item) => sum + Number(item.stock || 0), 0),
+  );
 
-    [items]
 
-  );
 
+  const lowStock = items.filter(
 
+    (item) => Number(item.stock || 0) > 0 && Number(item.stock) <= 10
 
-  const lowStock = items.filter(
+  ).length;
 
-    (item) => Number(item.stock || 0) > 0 && Number(item.stock) <= 10
 
-  ).length;
 
+  const outOfStock = items.filter(
 
+    (item) => Number(item.stock || 0) <= 0
 
-  const outOfStock = items.filter(
+  ).length;
 
-    (item) => Number(item.stock || 0) <= 0
 
-  ).length;
 
+  const filteredItems = useMemo(() => {
 
+    const term = search.trim().toLowerCase();
 
-  const filteredItems = useMemo(() => {
 
-    const term = search.trim().toLowerCase();
 
+    return items.filter((item) => {
 
+      const matchesSearch = [
 
-    return items.filter((item) => {
+        item.productName,
 
-      const matchesSearch = [
+        item.categoryName,
 
-        item.productName,
+        item.sku,
 
-        item.categoryName,
+        item.variantLabel,
 
-        item.sku,
+      ].some((value) => String(value || "").toLowerCase().includes(term));
 
-        item.variantLabel,
 
-      ].some((value) => String(value || "").toLowerCase().includes(term));
 
+      const matchesCategory =
 
+        categoryFilter === "ALL" || item.categoryName === categoryFilter;
 
-      const matchesCategory =
 
-        categoryFilter === "ALL" || item.categoryName === categoryFilter;
 
+      const stock = Number(item.stock || 0);
 
+      const matchesStock =
 
-      const stock = Number(item.stock || 0);
+        stockFilter === "ALL" ||
 
-      const matchesStock =
+        (stockFilter === "LOW" && stock > 0 && stock <= 10) ||
 
-        stockFilter === "ALL" ||
+        (stockFilter === "OUT" && stock <= 0) ||
 
-        (stockFilter === "LOW" && stock > 0 && stock <= 10) ||
+        (stockFilter === "AVAILABLE" && stock > 10);
 
-        (stockFilter === "OUT" && stock <= 0) ||
 
-        (stockFilter === "AVAILABLE" && stock > 10);
 
+      return matchesSearch && matchesCategory && matchesStock;
 
+    });
 
-      return matchesSearch && matchesCategory && matchesStock;
+  }, [items, search, categoryFilter, stockFilter]);
 
-    });
+  const paginatedItems = filteredItems.slice((stockPage - 1) * stockPageSize, stockPage * stockPageSize);
+  const paginatedMovements = movements.slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize);
 
-  }, [items, search, categoryFilter, stockFilter]);
 
 
+  function openMovement(item, movementType = "IN") {
 
-  function openMovement(item, movementType = "IN") {
+    setSelectedItem(item);
 
-    setSelectedItem(item);
+    setForm({
 
-    setForm({
+      movementType,
 
-      movementType,
+      quantity: "",
 
-      quantity: "",
+      note: "",
 
-      note: "",
+    });
 
-    });
+    setShowForm(true);
 
-    setShowForm(true);
+    setError("");
 
-    setError("");
+    setSuccess("");
 
-    setSuccess("");
+  }
 
-  }
 
 
+  function closeForm() {
 
-  function closeForm() {
+    if (saving) return;
 
-    if (saving) return;
 
 
+    setShowForm(false);
 
-    setShowForm(false);
+    setSelectedItem(null);
 
-    setSelectedItem(null);
+  }
 
-  }
 
 
+  async function saveMovement(event) {
 
-  async function saveMovement(event) {
+    event.preventDefault();
 
-    event.preventDefault();
 
 
+    if (!selectedItem) return;
 
-    if (!selectedItem) return;
 
 
+    const type = form.movementType;
 
-    const type = form.movementType;
+    const quantity = Number(form.quantity);
 
-    const quantity = Number(form.quantity);
+    const currentStock = Number(selectedItem.stock || 0);
 
-    const currentStock = Number(selectedItem.stock || 0);
 
 
+    if (
 
-    if (
+      !Number.isFinite(quantity) ||
 
-      !Number.isFinite(quantity) ||
+      quantity < 0 ||
 
-      quantity < 0 ||
+      (type !== "ADJUSTMENT" && quantity <= 0) ||
 
-      (type !== "ADJUSTMENT" && quantity <= 0) ||
+      (type === "ADJUSTMENT" && form.quantity.trim() === "")
 
-      (type === "ADJUSTMENT" && form.quantity.trim() === "")
+    ) {
 
-    ) {
+      setError(
 
-      setError(
+        type === "ADJUSTMENT"
 
-        type === "ADJUSTMENT"
+          ? "Enter the final stock quantity (zero is allowed)."
 
-          ? "Enter the final stock quantity (zero is allowed)."
+          : "Enter a quantity greater than zero."
 
-          : "Enter a quantity greater than zero."
+      );
 
-      );
+      return;
 
-      return;
+    }
 
-    }
 
 
+    if (type === "OUT" && quantity > currentStock) {
 
-    if (type === "OUT" && quantity > currentStock) {
+      setError(`Insufficient stock. Available stock: ${currentStock}`);
 
-      setError(`Insufficient stock. Available stock: ${currentStock}`);
+      return;
 
-      return;
+    }
 
-    }
 
 
+    setSaving(true);
 
-    setSaving(true);
+    setError("");
 
-    setError("");
+    setSuccess("");
 
-    setSuccess("");
 
 
+    try {
 
-    try {
+      await apiRequest("/inventory/adjust", {
 
-      await apiRequest("/inventory/adjust", {
+        method: "POST",
 
-        method: "POST",
+        body: JSON.stringify({
 
-        body: JSON.stringify({
+          productId: selectedItem.productId,
 
-          productId: selectedItem.productId,
+          variantId: selectedItem.variantId || undefined,
 
-          variantId: selectedItem.variantId || undefined,
+          sku: selectedItem.sku,
 
-          sku: selectedItem.sku,
+          movementType: type,
 
-          movementType: type,
+          quantity,
 
-          quantity,
+          note: form.note.trim(),
 
-          note: form.note.trim(),
+        }),
 
-        }),
+      });
 
-      });
 
 
+      setSuccess(
 
-      setSuccess(
+        `${type === "IN" ? "Stock added" : type === "OUT" ? "Stock issued" : "Stock adjusted"} successfully for ${selectedItem.sku}.`
 
-        `${type === "IN" ? "Stock added" : type === "OUT" ? "Stock issued" : "Stock adjusted"} successfully for ${selectedItem.sku}.`
+      );
 
-      );
 
 
+      setShowForm(false);
 
-      setShowForm(false);
+      setSelectedItem(null);
 
-      setSelectedItem(null);
+      await loadInventory();
 
-      await loadInventory();
+      await onInventoryUpdated?.();
 
-      setActiveTab("stock");
+      setActiveTab("stock");
 
-    } catch (err) {
+    } catch (err) {
 
-      setError(err.message);
+      setError(err.message);
 
-    } finally {
+    } finally {
 
-      setSaving(false);
+      setSaving(false);
 
-    }
+    }
 
-  }
+  }
 
 
 
-  return (
+  return (
 
-    <div className="inventory-root" style={styles.page}>
+    <div className="inventory-root" style={styles.page}>
 
-      <style>{`
+      <style>{`
 
-        .inventory-tabs { display:flex; gap:8px; flex-wrap:wrap; }
+        .inventory-tabs { display:flex; gap:8px; flex-wrap:wrap; }
 
-        .inventory-tab { padding:10px 14px; border:1px solid #d8deea; border-radius:8px; background:white; cursor:pointer; color:#475467; font-weight:600; }
+        .inventory-tab { padding:10px 14px; border:1px solid #d8deea; border-radius:8px; background:white; cursor:pointer; color:#475467; font-weight:600; }
 
-        .inventory-tab.active { background:#175cd3; color:white; border-color:#175cd3; }
+        .inventory-tab.active { background:#175cd3; color:white; border-color:#175cd3; }
 
-        .inventory-action { border:0; background:transparent; color:#175cd3; cursor:pointer; font-weight:600; padding:5px; }
+        .inventory-action { border:0; background:transparent; color:#175cd3; cursor:pointer; font-weight:600; padding:5px; }
 
-        .inventory-action:disabled { opacity:.4; cursor:not-allowed; }
+        .inventory-action:disabled { opacity:.4; cursor:not-allowed; }
 
-        .inventory-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin:18px 0; }
+        .inventory-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin:18px 0; }
 
-        .inventory-modal-backdrop { position:fixed; inset:0; z-index:2000; background:rgba(16,24,40,.55); display:flex; align-items:center; justify-content:center; padding:16px; overflow:auto; }
+        .inventory-modal-backdrop { position:fixed; inset:0; z-index:2000; background:rgba(16,24,40,.55); display:flex; align-items:center; justify-content:center; padding:16px; overflow:auto; }
 
-        .inventory-modal { width:min(100%,520px); background:white; padding:24px; border-radius:16px; box-shadow:0 24px 70px rgba(0,0,0,.2); }
+        .inventory-modal { width:min(100%,520px); background:white; padding:24px; border-radius:16px; box-shadow:0 24px 70px rgba(0,0,0,.2); }
 
-        @media(max-width:600px) { .inventory-modal { padding:18px; } }
+        @media(max-width:600px) { .inventory-modal { padding:18px; } }
 
         /* Theme-aware styles scoped to Inventory; works with the App root .dark class */
         .dark .inventory-root { color:#e2e8f0 !important; }
@@ -644,1054 +654,1078 @@ export default function Inventory() {
         .dark .inventory-root .inventory-tab { background:#1e293b; color:#cbd5e1; border-color:#475569; }
         .dark .inventory-root .inventory-tab.active { background:#2563eb; color:#fff; border-color:#2563eb; }
         .dark .inventory-root .inventory-action { color:#60a5fa; }
-        .dark .inventory-root .inventory-modal-backdrop { background:rgba(2,6,23,.78); }
+        .dark .inventory-modal-backdrop { background:rgba(2,6,23,.78); }
+        .dark .inventory-modal { background:#172554 !important; color:#f1f5f9 !important; border:1px solid #334155; }
         .dark .inventory-root button:disabled { opacity:.45; }
         .dark .inventory-root table { background:#111c33; }
         .dark .inventory-root tbody tr:hover { background:#1e293b; }
 
 
-      `}</style>
+      `}</style>
 
 
 
-      <section>
+      <section>
 
-        <div
+        <div
 
-          style={{
+          style={{
 
-            display: "flex",
+            display: "flex",
 
-            justifyContent: "space-between",
+            justifyContent: "space-between",
 
-            alignItems: "center",
+            alignItems: "center",
 
-            gap: 12,
+            gap: 12,
 
-            flexWrap: "wrap",
+            flexWrap: "wrap",
 
-          }}
+          }}
 
-        >
+        >
 
-          <div>
+          <div>
 
-            <div style={{ color: "#667085", fontSize: 12, fontWeight: 700 }}>
+            <div style={{ color: "#667085", fontSize: 12, fontWeight: 700 }}>
 
-              STOCK MANAGEMENT
+              STOCK MANAGEMENT
 
-            </div>
+            </div>
 
-            <h2 style={{ margin: "5px 0", fontSize: 24 }}>
+            <h2 style={{ margin: "5px 0", fontSize: 24 }}>
 
-              Inventory Overview
+              Inventory Overview
 
-            </h2>
+            </h2>
 
-            <p style={{ margin: 0, color: "#667085", fontSize: 14 }}>
+            <p style={{ margin: 0, color: "#667085", fontSize: 14 }}>
 
-              Track SKU-wise stock and record every stock movement.
+              Track SKU-wise stock and record every stock movement.
 
-            </p>
+            </p>
 
-          </div>
+          </div>
 
 
 
-          <button
+          <button
 
-            type="button"
+            type="button"
 
-            style={styles.secondary}
+            style={styles.secondary}
 
-            onClick={loadInventory}
+            onClick={loadInventory}
 
-            disabled={loading}
+            disabled={loading}
 
-          >
+          >
 
-            {loading ? "Refreshing..." : "↻ Refresh"}
+            {loading ? "Refreshing..." : "↻ Refresh"}
 
-          </button>
+          </button>
 
-        </div>
+        </div>
 
-      </section>
+      </section>
 
 
 
-      {error && (
+      {error && (
 
-        <div
+        <div
 
-          role="alert"
+          role="alert"
 
-          style={{
+          style={{
 
-            padding: 13,
+            padding: 13,
 
-            borderRadius: 9,
+            borderRadius: 9,
 
-            background: "#fef3f2",
+            background: "#fef3f2",
 
-            color: "#b42318",
+            color: "#b42318",
 
-            border: "1px solid #fecdca",
+            border: "1px solid #fecdca",
 
-          }}
+          }}
 
-        >
+        >
 
-          {error}
+          {error}
 
-        </div>
+        </div>
 
-      )}
+      )}
 
 
 
-      {success && (
+      {success && (
 
-        <div
+        <div
 
-          role="status"
+          role="status"
 
-          style={{
+          style={{
 
-            padding: 13,
+            padding: 13,
 
-            borderRadius: 9,
+            borderRadius: 9,
 
-            background: "#ecfdf3",
+            background: "#ecfdf3",
 
-            color: "#027a48",
+            color: "#027a48",
 
-            border: "1px solid #abefc6",
+            border: "1px solid #abefc6",
 
-          }}
+          }}
 
-        >
+        >
 
-          {success}
+          {success}
 
-        </div>
+        </div>
 
-      )}
+      )}
 
 
 
-      <section style={styles.cards}>
+      <section style={styles.cards}>
 
-        {[
+        {[
 
-          {
+          {
 
-            title: "Total SKUs",
+            title: "Total SKUs",
 
-            value: items.length,
+            value: items.length,
 
-            description: "Product variants and standalone SKUs",
+            description: "Product variants and standalone SKUs",
 
-            color: "#175cd3",
+            color: "#175cd3",
 
-          },
+          },
 
-          {
+          {
 
-            title: "Total Stock",
+            title: "Total Stock",
 
-            value: totalStock.toLocaleString("en-IN"),
+            value: totalStock.toLocaleString("en-IN"),
 
-            description: "Total units available",
+            description: "Total units available",
 
-            color: "#027a48",
+            color: "#027a48",
 
-          },
+          },
 
-          {
+          {
 
-            title: "Low Stock",
+            title: "Low Stock",
 
-            value: lowStock,
+            value: lowStock,
 
-            description: "Between 1 and 10 units",
+            description: "Between 1 and 10 units",
 
-            color: "#b54708",
+            color: "#b54708",
 
-          },
+          },
 
-          {
+          {
 
-            title: "Out of Stock",
+            title: "Out of Stock",
 
-            value: outOfStock,
+            value: outOfStock,
 
-            description: "Zero or fewer units",
+            description: "Zero or fewer units",
 
-            color: "#b42318",
+            color: "#b42318",
 
-          },
+          },
 
-        ].map((card) => (
+        ].map((card) => (
 
-          <div key={card.title} style={styles.card}>
+          <div key={card.title} style={styles.card}>
 
-            <div style={{ color: "#667085", fontSize: 13 }}>
+            <div style={{ color: "#667085", fontSize: 13 }}>
 
-              {card.title}
+              {card.title}
 
-            </div>
+            </div>
 
-            <div
+            <div
 
-              style={{
+              style={{
 
-                fontSize: 30,
+                fontSize: 30,
 
-                fontWeight: 750,
+                fontWeight: 750,
 
-                margin: "9px 0",
+                margin: "9px 0",
 
-                color: card.color,
+                color: card.color,
 
-              }}
+              }}
 
-            >
+            >
 
-              {card.value}
+              {card.value}
 
-            </div>
+            </div>
 
-            <div style={{ color: "#98a2b3", fontSize: 12 }}>
+            <div style={{ color: "#98a2b3", fontSize: 12 }}>
 
-              {card.description}
+              {card.description}
 
-            </div>
+            </div>
 
-          </div>
+          </div>
 
-        ))}
+        ))}
 
-      </section>
+      </section>
 
 
 
-      <section style={styles.panel}>
+      <section style={styles.panel}>
 
-        <div className="inventory-tabs">
+        <div className="inventory-tabs">
 
-          <button
+          <button
 
-            type="button"
+            type="button"
 
-            className={`inventory-tab ${activeTab === "stock" ? "active" : ""}`}
+            className={`inventory-tab ${activeTab === "stock" ? "active" : ""}`}
 
-            onClick={() => setActiveTab("stock")}
+            onClick={() => setActiveTab("stock")}
 
-          >
+          >
 
-            Stock Overview
+            Stock Overview
 
-          </button>
+          </button>
 
-          <button
+          <button
 
-            type="button"
+            type="button"
 
-            className={`inventory-tab ${activeTab === "history" ? "active" : ""}`}
+            className={`inventory-tab ${activeTab === "history" ? "active" : ""}`}
 
-            onClick={() => setActiveTab("history")}
+            onClick={() => setActiveTab("history")}
 
-          >
+          >
 
-            Stock Movement History
+            Stock Movement History
 
-          </button>
+          </button>
 
-        </div>
+        </div>
 
 
 
-        {activeTab === "stock" ? (
+        {activeTab === "stock" ? (
 
-          <>
+          <>
 
-            <div style={{ marginTop: 20 }}>
+            <div style={{ marginTop: 20 }}>
 
-              <h3 style={{ margin: "0 0 5px" }}>SKU-wise Stock</h3>
+              <h3 style={{ margin: "0 0 5px" }}>SKU-wise Stock</h3>
 
-              <p style={{ margin: 0, color: "#667085", fontSize: 13 }}>
+              <p style={{ margin: 0, color: "#667085", fontSize: 13 }}>
 
-                Search, filter and manage stock for individual SKUs.
+                Search, filter and manage stock for individual SKUs.
 
-              </p>
+              </p>
 
-            </div>
+            </div>
 
 
 
-            <div className="inventory-filters">
+            <div className="inventory-filters">
 
-              <label style={styles.label}>
+              <label style={styles.label}>
 
-                Search
+                Search
 
-                <input
+                <input
 
-                  style={styles.input}
+                  style={styles.input}
 
-                  value={search}
+                  value={search}
 
-                  onChange={(event) => setSearch(event.target.value)}
+                  onChange={(event) => { setSearch(event.target.value); setStockPage(1); }}
 
-                  placeholder="Product, SKU or size..."
+                  placeholder="Product, SKU or size..."
 
-                />
+                />
 
-              </label>
+              </label>
 
 
 
-              <label style={styles.label}>
+              <label style={styles.label}>
 
-                Category
+                Category
 
-                <select
+                <select
 
-                  style={styles.input}
+                  style={styles.input}
 
-                  value={categoryFilter}
+                  value={categoryFilter}
 
-                  onChange={(event) => setCategoryFilter(event.target.value)}
+                  onChange={(event) => { setCategoryFilter(event.target.value); setStockPage(1); }}
 
-                >
+                >
 
-                  <option value="ALL">All Categories</option>
+                  <option value="ALL">All Categories</option>
 
-                  {categories.map((category) => (
+                  {categories.map((category) => (
 
-                    <option key={category} value={category}>
+                    <option key={category} value={category}>
 
-                      {category}
+                      {category}
 
-                    </option>
+                    </option>
 
-                  ))}
+                  ))}
 
-                </select>
+                </select>
 
-              </label>
+              </label>
 
 
 
-              <label style={styles.label}>
+              <label style={styles.label}>
 
-                Stock Status
+                Stock Status
 
-                <select
+                <select
 
-                  style={styles.input}
+                  style={styles.input}
 
-                  value={stockFilter}
+                  value={stockFilter}
 
-                  onChange={(event) => setStockFilter(event.target.value)}
+                  onChange={(event) => { setStockFilter(event.target.value); setStockPage(1); }}
 
-                >
+                >
 
-                  <option value="ALL">All Stock</option>
+                  <option value="ALL">All Stock</option>
 
-                  <option value="AVAILABLE">Available (more than 10)</option>
+                  <option value="AVAILABLE">Available (more than 10)</option>
 
-                  <option value="LOW">Low Stock (1–10)</option>
+                  <option value="LOW">Low Stock (1–10)</option>
 
-                  <option value="OUT">Out of Stock</option>
+                  <option value="OUT">Out of Stock</option>
 
-                </select>
+                </select>
 
-              </label>
+              </label>
 
-            </div>
+            </div>
 
 
 
-            <div style={{ marginBottom: 12, color: "#667085", fontSize: 13 }}>
+            <div style={{ marginBottom: 12, color: "#667085", fontSize: 13 }}>
 
-              Showing <strong>{filteredItems.length}</strong> of {items.length} SKUs
+              Showing <strong>{filteredItems.length}</strong> of {items.length} SKUs
 
-            </div>
+            </div>
 
 
 
-            {loading ? (
+            {loading ? (
 
-              <p>Loading inventory...</p>
+              <p>Loading inventory...</p>
 
-            ) : (
+            ) : (
 
-              <div style={styles.tableWrap}>
+              <div style={styles.tableWrap}>
 
-                <table style={styles.table}>
+                <table style={styles.table}>
 
-                  <thead>
+                  <thead>
 
-                    <tr>
+                    <tr>
 
-                      {[
+                      {[
 
-                        "PRODUCT / SKU",
+                        "PRODUCT / SKU",
 
-                        "CATEGORY",
+                        "CATEGORY",
 
-                        "VARIANT",
+                        "VARIANT",
 
-                        "PURCHASE",
+                        "PURCHASE",
 
-                        "SELLING",
+                        "SELLING",
 
-                        "STOCK",
+                        "STOCK",
 
-                        "ACTIONS",
+                        "ACTIONS",
 
-                      ].map((heading) => (
+                      ].map((heading) => (
 
-                        <th style={styles.th} key={heading}>
+                        <th style={styles.th} key={heading}>
 
-                          {heading}
+                          {heading}
 
-                        </th>
+                        </th>
 
-                      ))}
+                      ))}
 
-                    </tr>
+                    </tr>
 
-                  </thead>
+                  </thead>
 
-                  <tbody>
+                  <tbody>
 
-                    {filteredItems.map((item, index) => (
+                    {paginatedItems.map((item, index) => (
 
-                      <tr
+                      <tr
 
-                        key={`${item.productId}-${item.variantId || item.sku}-${index}`}
+                        key={`${item.productId}-${item.variantId || item.sku}-${index}`}
 
-                      >
+                      >
 
-                        <td style={styles.td}>
+                        <td style={styles.td}>
 
-                          <strong style={{ display: "block", color: "#172033" }}>
+                            <strong className="inventory-product-name" style={{ display: "block", color: "#172033" }}>
 
-                            {item.productName}
+                            {item.productName}
 
-                          </strong>
+                          </strong>
 
-                          <span style={{ color: "#667085", fontSize: 12 }}>
+                            <span className="inventory-product-sku" style={{ color: "#667085", fontSize: 12 }}>
 
-                            SKU: {item.sku || "—"}
+                            SKU: {item.sku || "—"}
 
-                          </span>
+                          </span>
 
-                        </td>
+                        </td>
 
-                        <td style={styles.td}>{item.categoryName || "—"}</td>
+                        <td style={styles.td}>{item.categoryName || "—"}</td>
 
-                        <td style={styles.td}>{item.variantLabel || item.size || "Standard"}</td>
+                        <td style={styles.td}>{item.variantLabel || item.size || "Standard"}</td>
 
-                        <td style={styles.td}>{money(item.purchasePrice)}</td>
+                        <td style={styles.td}>{money(item.purchasePrice)}</td>
 
-                        <td style={styles.td}>{money(item.sellingPrice)}</td>
+                        <td style={styles.td}>{money(item.sellingPrice)}</td>
 
-                        <td style={styles.td}>
+                        <td style={styles.td}>
 
-                          <span
+                          <span
 
-                            style={{
+                            style={{
 
-                              fontWeight: 750,
+                              fontWeight: 750,
 
-                              color: stockColor(item.stock),
+                              color: stockColor(item.stock),
 
-                            }}
+                            }}
 
-                          >
+                          >
 
-                            {Number(item.stock || 0).toLocaleString("en-IN")}
+                            {Number(item.stock || 0).toLocaleString("en-IN")}
 
-                          </span>
+                          </span>
 
-                          <span style={{ color: "#98a2b3", marginLeft: 5 }}>
+                          <span style={{ color: "#98a2b3", marginLeft: 5 }}>
 
-                            pcs
+                            pcs
 
-                          </span>
+                          </span>
 
-                        </td>
+                        </td>
 
-                        <td style={styles.td}>
+                        <td style={styles.td}>
 
-                          <div style={{ display: "flex", gap: 5 }}>
+                          <div style={{ display: "flex", gap: 5 }}>
 
-                            <button
+                            <button
 
-                              type="button"
+                              type="button"
 
-                              className="inventory-action"
+                              className="inventory-action"
 
-                              onClick={() => openMovement(item, "IN")}
+                              onClick={() => openMovement(item, "IN")}
 
-                              title="Add stock"
+                              title="Add stock"
 
-                            >
+                            >
 
-                              + IN
+                              + IN
 
-                            </button>
+                            </button>
 
-                            <button
+                            <button
 
-                              type="button"
+                              type="button"
 
-                              className="inventory-action"
+                              className="inventory-action"
 
-                              onClick={() => openMovement(item, "OUT")}
+                              onClick={() => openMovement(item, "OUT")}
 
-                              disabled={Number(item.stock) <= 0}
+                              disabled={Number(item.stock) <= 0}
 
-                              title="Issue stock"
+                              title="Issue stock"
 
-                            >
+                            >
 
-                              − OUT
+                              − OUT
 
-                            </button>
+                            </button>
 
-                            <button
+                            <button
 
-                              type="button"
+                              type="button"
 
-                              className="inventory-action"
+                              className="inventory-action"
 
-                              onClick={() => openMovement(item, "ADJUSTMENT")}
+                              onClick={() => openMovement(item, "ADJUSTMENT")}
 
-                              title="Set final stock"
+                              title="Set final stock"
 
-                            >
+                            >
 
-                              Adjust
+                              Adjust
 
-                            </button>
+                            </button>
 
-                          </div>
+                          </div>
 
-                        </td>
+                        </td>
 
-                      </tr>
+                      </tr>
 
-                    ))}
+                    ))}
 
 
 
-                    {!filteredItems.length && (
+                    {!filteredItems.length && (
 
-                      <tr>
+                      <tr>
 
-                        <td style={styles.td} colSpan={7}>
+                        <td style={styles.td} colSpan={7}>
 
-                          No inventory items match your filters.
+                          No inventory items match your filters.
 
-                        </td>
+                        </td>
 
-                      </tr>
+                      </tr>
 
-                    )}
+                    )}
 
-                  </tbody>
+                  </tbody>
 
-                </table>
+                </table>
 
-              </div>
+              </div>
 
-            )}
+            )}
+            {!loading && <Pagination total={filteredItems.length} page={stockPage} pageSize={stockPageSize} onPageChange={setStockPage} onPageSizeChange={setStockPageSize} />}
 
-          </>
+          </>
 
-        ) : (
+        ) : (
 
-          <>
+          <>
 
-            <div style={{ margin: "20px 0" }}>
+            <div style={{ margin: "20px 0" }}>
 
-              <h3 style={{ margin: "0 0 5px" }}>Stock Movement History</h3>
+              <h3 style={{ margin: "0 0 5px" }}>Stock Movement History</h3>
 
-              <p style={{ margin: 0, color: "#667085", fontSize: 13 }}>
+              <p style={{ margin: 0, color: "#667085", fontSize: 13 }}>
 
-                Latest 200 stock movements recorded by the backend.
+                Latest 200 stock movements recorded by the backend.
 
-              </p>
+              </p>
 
-            </div>
+            </div>
 
 
 
-            {loading ? (
+            {loading ? (
 
-              <p>Loading stock history...</p>
+              <p>Loading stock history...</p>
 
-            ) : (
+            ) : (
 
-              <div style={styles.tableWrap}>
+              <div style={styles.tableWrap}>
 
-                <table style={styles.table}>
+                <table style={styles.table}>
 
-                  <thead>
+                  <thead>
 
-                    <tr>
+                    <tr>
 
-                      {[
+                      {[
 
-                        "DATE & TIME",
+                        "DATE & TIME",
 
-                        "PRODUCT",
+                        "PRODUCT",
 
-                        "SKU",
+                        "SKU",
 
-                        "TYPE",
+                        "TYPE",
 
-                        "QUANTITY",
+                        "QUANTITY",
 
-                        "PREVIOUS",
+                        "PREVIOUS",
 
-                        "NEW STOCK",
+                        "NEW STOCK",
 
-                        "NOTE",
+                        "NOTE",
 
-                      ].map((heading) => (
+                      ].map((heading) => (
 
-                        <th style={styles.th} key={heading}>
+                        <th style={styles.th} key={heading}>
 
-                          {heading}
+                          {heading}
 
-                        </th>
+                        </th>
 
-                      ))}
+                      ))}
 
-                    </tr>
+                    </tr>
 
-                  </thead>
+                  </thead>
 
-                  <tbody>
+                  <tbody>
 
-                    {movements.map((movement) => (
+                    {paginatedMovements.map((movement) => (
 
-                      <tr key={movement._id}>
+                      <tr key={movement._id}>
 
-                        <td style={styles.td}>{dateTime(movement.createdAt)}</td>
+                        <td style={styles.td}>{dateTime(movement.createdAt)}</td>
 
-                        <td style={styles.td}>
+                        <td style={styles.td}>
 
-                          <strong>{movement.productName}</strong>
+                          <strong>{movement.productName}</strong>
 
-                          {movement.variantLabel && (
+                          {movement.variantLabel && (
 
-                            <div style={{ color: "#667085", fontSize: 11 }}>
+                            <div style={{ color: "#667085", fontSize: 11 }}>
 
-                              {movement.variantLabel}
+                              {movement.variantLabel}
 
-                            </div>
+                            </div>
 
-                          )}
+                          )}
 
-                        </td>
+                        </td>
 
-                        <td style={styles.td}>{movement.sku}</td>
+                        <td style={styles.td}>{movement.sku}</td>
 
-                        <td style={styles.td}>
+                        <td style={styles.td}>
 
-                          <span
+                          <span
 
-                            style={{
+                            style={{
 
-                              ...styles.badge,
+                              ...styles.badge,
 
-                              background:
+                              background:
 
-                                movement.movementType === "IN"
+                                movement.movementType === "IN"
 
-                                  ? "#ecfdf3"
+                                  ? "#ecfdf3"
 
-                                  : movement.movementType === "OUT"
+                                  : movement.movementType === "OUT"
 
-                                    ? "#fef3f2"
+                                    ? "#fef3f2"
 
-                                    : "#fff4e5",
+                                    : "#fff4e5",
 
-                              color:
+                              color:
 
-                                movement.movementType === "IN"
+                                movement.movementType === "IN"
 
-                                  ? "#027a48"
+                                  ? "#027a48"
 
-                                  : movement.movementType === "OUT"
+                                  : movement.movementType === "OUT"
 
-                                    ? "#b42318"
+                                    ? "#b42318"
 
-                                    : "#b54708",
+                                    : "#b54708",
 
-                            }}
+                            }}
 
-                          >
+                          >
 
-                            {movement.movementType}
+                            {movement.movementType}
 
-                          </span>
+                          </span>
 
-                        </td>
+                        </td>
 
-                        <td style={styles.td}>
+                        <td style={styles.td}>
 
-                          {Number(movement.quantity || 0).toLocaleString("en-IN")}
+                          {Number(movement.quantity || 0).toLocaleString("en-IN")}
 
-                        </td>
+                        </td>
 
-                        <td style={styles.td}>{movement.previousStock}</td>
+                        <td style={styles.td}>{movement.previousStock}</td>
 
-                        <td style={styles.td}>{movement.newStock}</td>
+                        <td style={styles.td}>{movement.newStock}</td>
 
-                        <td style={styles.td}>{movement.note || "—"}</td>
+                        <td style={styles.td}>{movement.note || "—"}</td>
 
-                      </tr>
+                      </tr>
 
-                    ))}
+                    ))}
 
 
 
-                    {!movements.length && (
+                    {!movements.length && (
 
-                      <tr>
+                      <tr>
 
-                        <td style={styles.td} colSpan={8}>
+                        <td style={styles.td} colSpan={8}>
 
-                          No stock movements recorded yet. Use Stock IN or OUT to
+                          No stock movements recorded yet. Use Stock IN or OUT to
 
-                          record the first movement.
+                          record the first movement.
 
-                        </td>
+                        </td>
 
-                      </tr>
+                      </tr>
 
-                    )}
+                    )}
 
-                  </tbody>
+                  </tbody>
 
-                </table>
+                </table>
 
-              </div>
+              </div>
 
-            )}
+            )}
+            {!loading && <Pagination total={movements.length} page={historyPage} pageSize={historyPageSize} onPageChange={setHistoryPage} onPageSizeChange={setHistoryPageSize} />}
 
-          </>
+          </>
 
-        )}
+        )}
 
-      </section>
+      </section>
 
 
 
-      {showForm && selectedItem && (
+      {showForm && selectedItem && createPortal((
 
-        <div
+            <div
 
-          className="inventory-modal-backdrop"
+              className="inventory-modal-backdrop"
 
-          onMouseDown={(event) => {
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 9999,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 16,
+                overflow: "auto",
+                background: "rgba(16, 24, 40, 0.55)",
+              }}
 
-            if (event.target === event.currentTarget) closeForm();
+          onMouseDown={(event) => {
 
-          }}
+            if (event.target === event.currentTarget) closeForm();
 
-        >
+          }}
 
-          <section
+        >
 
-            className="inventory-modal"
+              <section
 
-            role="dialog"
+                className="inventory-modal"
 
-            aria-modal="true"
+                style={{
+                  width: "min(100%, 520px)",
+                  background: "#fff",
+                  color: "#172033",
+                  padding: 24,
+                  borderRadius: 16,
+                  boxShadow: "0 24px 70px rgba(0,0,0,.2)",
+                }}
 
-            aria-labelledby="inventory-form-title"
+            role="dialog"
 
-          >
+            aria-modal="true"
 
-            <div
+            aria-labelledby="inventory-form-title"
 
-              style={{
+          >
 
-                display: "flex",
+            <div
 
-                justifyContent: "space-between",
+              style={{
 
-                gap: 12,
+                display: "flex",
 
-                alignItems: "start",
+                justifyContent: "space-between",
 
-                marginBottom: 20,
+                gap: 12,
 
-              }}
+                alignItems: "start",
 
-            >
+                marginBottom: 20,
 
-              <div>
+              }}
 
-                <h3 id="inventory-form-title" style={{ margin: "0 0 6px" }}>
+            >
 
-                  {form.movementType === "IN"
+              <div>
 
-                    ? "Stock In"
+                <h3 id="inventory-form-title" style={{ margin: "0 0 6px" }}>
 
-                    : form.movementType === "OUT"
+                  {form.movementType === "IN"
 
-                      ? "Stock Out"
+                    ? "Stock In"
 
-                      : "Stock Adjustment"}
+                    : form.movementType === "OUT"
 
-                </h3>
+                      ? "Stock Out"
 
-                <div style={{ fontSize: 13, color: "#667085" }}>
+                      : "Stock Adjustment"}
 
-                  {selectedItem.productName} · SKU: {selectedItem.sku}
+                </h3>
 
-                </div>
+                <div style={{ fontSize: 13, color: "#667085" }}>
 
-                <div style={{ fontSize: 13, marginTop: 5 }}>
+                  {selectedItem.productName} · SKU: {selectedItem.sku}
 
-                  Current stock: <strong>{selectedItem.stock}</strong> pcs
+                </div>
 
-                </div>
+                <div style={{ fontSize: 13, marginTop: 5 }}>
 
-              </div>
+                  Current stock: <strong>{selectedItem.stock}</strong> pcs
 
-              <button
+                </div>
 
-                type="button"
+              </div>
 
-                style={styles.secondary}
+              <button
 
-                onClick={closeForm}
+                type="button"
 
-                disabled={saving}
+                style={styles.secondary}
 
-              >
+                onClick={closeForm}
 
-                Close
+                disabled={saving}
 
-              </button>
+              >
 
-            </div>
+                Close
 
+              </button>
 
+            </div>
 
-            <form onSubmit={saveMovement} style={{ display: "grid", gap: 16 }}>
 
-              <label style={styles.label}>
 
-                Movement Type
+            <form onSubmit={saveMovement} style={{ display: "grid", gap: 16 }}>
 
-                <select
+              <label style={styles.label}>
 
-                  style={styles.input}
+                Movement Type
 
-                  value={form.movementType}
+                <select
 
-                  onChange={(event) =>
+                  style={styles.input}
 
-                    setForm((old) => ({
+                  value={form.movementType}
 
-                      ...old,
+                  onChange={(event) =>
 
-                      movementType: event.target.value,
+                    setForm((old) => ({
 
-                      quantity: "",
+                      ...old,
 
-                    }))
+                      movementType: event.target.value,
 
-                  }
+                      quantity: "",
 
-                >
+                    }))
 
-                  <option value="IN">Stock In — add units</option>
+                  }
 
-                  <option value="OUT">Stock Out — issue units</option>
+                >
 
-                  <option value="ADJUSTMENT">Adjustment — set final stock</option>
+                  <option value="IN">Stock In — add units</option>
 
-                </select>
+                  <option value="OUT">Stock Out — issue units</option>
 
-              </label>
+                  <option value="ADJUSTMENT">Adjustment — set final stock</option>
 
+                </select>
 
+              </label>
 
-              <label style={styles.label}>
 
-                {form.movementType === "ADJUSTMENT"
 
-                  ? "Final Stock Quantity (pcs)"
+              <label style={styles.label}>
 
-                  : "Quantity (pcs)"}
+                {form.movementType === "ADJUSTMENT"
 
-                <input
+                  ? "Final Stock Quantity (pcs)"
 
-                  style={styles.input}
+                  : "Quantity (pcs)"}
 
-                  type="number"
+                <input
 
-                  min={form.movementType === "ADJUSTMENT" ? "0" : "1"}
+                  style={styles.input}
 
-                  step="1"
+                  type="number"
 
-                  required
+                  min={form.movementType === "ADJUSTMENT" ? "0" : "1"}
 
-                  value={form.quantity}
+                  step="1"
 
-                  onChange={(event) =>
+                  required
 
-                    setForm((old) => ({
+                  value={form.quantity}
 
-                      ...old,
+                  onChange={(event) =>
 
-                      quantity: event.target.value,
+                    setForm((old) => ({
 
-                    }))
+                      ...old,
 
-                  }
+                      quantity: event.target.value,
 
-                  placeholder={
+                    }))
 
-                    form.movementType === "ADJUSTMENT"
+                  }
 
-                      ? "Enter final stock, e.g. 0"
+                  placeholder={
 
-                      : "Enter quantity"
+                    form.movementType === "ADJUSTMENT"
 
-                  }
+                      ? "Enter final stock, e.g. 0"
 
-                />
+                      : "Enter quantity"
 
-              </label>
+                  }
 
+                />
 
+              </label>
 
-              <label style={styles.label}>
 
-                Note / Reference
 
-                <input
+              <label style={styles.label}>
 
-                  style={styles.input}
+                Note / Reference
 
-                  value={form.note}
+                <input
 
-                  onChange={(event) =>
+                  style={styles.input}
 
-                    setForm((old) => ({ ...old, note: event.target.value }))
+                  value={form.note}
 
-                  }
+                  onChange={(event) =>
 
-                  placeholder="e.g. Purchase invoice, dispatch or physical count"
+                    setForm((old) => ({ ...old, note: event.target.value }))
 
-                  maxLength={500}
+                  }
 
-                />
+                  placeholder="e.g. Purchase invoice, dispatch or physical count"
 
-              </label>
+                  maxLength={500}
 
+                />
 
+              </label>
 
-              {form.quantity !== "" && Number(form.quantity) >= 0 && (
 
-                <div
 
-                  style={{
+              {form.quantity !== "" && Number(form.quantity) >= 0 && (
 
-                    padding: 12,
+                <div
 
-                    borderRadius: 8,
+                  style={{
 
-                    background: "#f5f8fc",
+                    padding: 12,
 
-                    fontSize: 13,
+                    borderRadius: 8,
 
-                  }}
+                    background: "#f5f8fc",
 
-                >
+                    fontSize: 13,
 
-                  Expected stock after operation:{" "}
+                  }}
 
-                  <strong>
+                >
 
-                    {form.movementType === "IN"
+                  Expected stock after operation:{" "}
 
-                      ? Number(selectedItem.stock) + Number(form.quantity)
+                  <strong>
 
-                      : form.movementType === "OUT"
+                    {form.movementType === "IN"
 
-                        ? Number(selectedItem.stock) - Number(form.quantity)
+                      ? Number(selectedItem.stock) + Number(form.quantity)
 
-                        : Number(form.quantity)}
+                      : form.movementType === "OUT"
 
-                  </strong>{" "}
+                        ? Number(selectedItem.stock) - Number(form.quantity)
 
-                  pcs
+                        : Number(form.quantity)}
 
-                </div>
+                  </strong>{" "}
 
-              )}
+                  pcs
 
+                </div>
 
+          )}
 
-              {error && (
 
-                <div style={{ color: "#b42318", fontSize: 13 }}>{error}</div>
 
-              )}
+              {error && (
 
+                <div style={{ color: "#b42318", fontSize: 13 }}>{error}</div>
 
+          )}
 
-              <div style={{ display: "flex", gap: 10, justifyContent: "end" }}>
 
-                <button
 
-                  type="button"
+              <div style={{ display: "flex", gap: 10, justifyContent: "end" }}>
 
-                  style={styles.secondary}
+                <button
 
-                  onClick={closeForm}
+                  type="button"
 
-                  disabled={saving}
+                  style={styles.secondary}
 
-                >
+                  onClick={closeForm}
 
-                  Cancel
+                  disabled={saving}
 
-                </button>
+                >
 
-                <button type="submit" style={styles.primary} disabled={saving}>
+                  Cancel
 
-                  {saving ? "Saving..." : "Save Stock Movement"}
+                </button>
 
-                </button>
+                <button type="submit" style={styles.primary} disabled={saving}>
 
-              </div>
+                  {saving ? "Saving..." : "Save Stock Movement"}
 
-            </form>
+                </button>
 
-          </section>
+              </div>
 
-        </div>
+            </form>
 
-      )}
+          </section>
 
-    </div>
+        </div>
 
-  );
+      ), document.body)}
+
+    </div>
+
+  );
 
 }

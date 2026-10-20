@@ -55,6 +55,6 @@ Passwords are stored as scrypt hashes in the `admins` collection, not as plain t
 
 The login also includes a forgot-password flow. It creates a one-time six-digit reset code valid for 15 minutes and stores only its hash in MongoDB. Because no email provider is configured yet, the code is displayed in the local development UI; connect an email provider before using this flow in production.
 
-### Dispatch SMS setup
+### Dispatch email setup
 
-Dispatch uses MSG91's Flow SMS API. Add `MSG91_AUTH_KEY` and `MSG91_TRACKING_TEMPLATE_ID` to `fitwell-backend/.env`. The approved MSG91 template should define `VAR1` for the order number, `VAR2` for the courier name, and `VAR3` for the tracking number. When tracking is saved, the system sends the SMS to the retailer's 10-digit Indian mobile number. See the [MSG91 Flow SMS API documentation](https://docs.msg91.com/sms/send-sms).
+Dispatch also sends a detailed tracking email to the retailer's saved email address through Gmail SMTP. Add `SMTP_USER=fitwellsanitary@gmail.com` and a Gmail app password to `fitwell-backend/.env`. The email includes the client name, order number, courier, tracking ID, dispatch date, order total, and item list. If SMTP credentials are not configured, dispatch still succeeds and the UI reports that email is not configured.

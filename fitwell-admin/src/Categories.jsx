@@ -1,6 +1,7 @@
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./Categories.css";
+import Pagination from "./Pagination";
 
 const API = "http://localhost:5000/api/categories";
 
@@ -12,8 +13,10 @@ export default function Categories() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  async function loadCategories() {
+  const loadCategories = useCallback(async () => {
     setLoading(true);
     setError("");
 
@@ -27,11 +30,12 @@ export default function Categories() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [setCategories, setError, setLoading]);
 
   useEffect(() => {
-    loadCategories();
-  }, []);
+    const timer = window.setTimeout(loadCategories, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadCategories]);
 
   function resetForm() {
     setName("");
@@ -108,6 +112,7 @@ export default function Categories() {
   }
 
   const activeCategories = categories.filter((category) => category.isActive);
+  const paginatedCategories = categories.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="category-page">
@@ -190,7 +195,7 @@ export default function Categories() {
                 </tr>
               </thead>
               <tbody>
-                {categories.map((category) => (
+                {paginatedCategories.map((category) => (
                   <tr key={category._id}>
                     <td><strong>{category.name}</strong></td>
                     <td>{category.description || "—"}</td>
@@ -232,6 +237,7 @@ export default function Categories() {
             </table>
           </div>
         )}
+        {!loading && <Pagination total={categories.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}
       </div>
     </div>
   );

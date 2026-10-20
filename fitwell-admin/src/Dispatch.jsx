@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const API = "http://localhost:5000/api";
 
 export default function Dispatch() {
   const [orders, setOrders] = useState([]); const [shipping, setShipping] = useState({}); const [filter, setFilter] = useState("all"); const [error, setError] = useState(""); const [success, setSuccess] = useState("");
-  async function request(path, options = {}) { const response = await fetch(`${API}${path}`, { ...options, headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), Authorization: `Bearer ${localStorage.getItem("fitwell-admin-token")}` } }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.message || "Request failed."); return data; }
-  async function loadOrders() { try { setOrders(await request("/orders")); } catch (err) { setError(err.message); } }
-  useEffect(() => { loadOrders(); }, []);
-  async function saveShipping(order) { const values = shipping[order._id] || { courierName: order.courierName || "", trackingNumber: order.trackingNumber || "" }; setError(""); setSuccess(""); try { const result = await request(`/orders/${order._id}/shipping`, { method: "PATCH", body: JSON.stringify(values) }); const notice = result.notification?.status === "sent" ? " SMS sent to retailer." : result.notification?.status === "not_configured" ? " SMS not configured yet." : " SMS failed; check backend logs."; setSuccess(`${order.orderNumber} marked as dispatched.${notice}`); await loadOrders(); } catch (err) { setError(err.message); } }
+  const request = useCallback(async (path, options = {}) => { const response = await fetch(`${API}${path}`, { ...options, headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), Authorization: `Bearer ${localStorage.getItem("fitwell-admin-token")}` } }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.message || "Request failed."); return data; }, []);
+  const loadOrders = useCallback(async () => { try { setOrders(await request("/orders")); } catch (err) { setError(err.message); } }, [request, setOrders, setError]);
+  useEffect(() => {
+    const timer = window.setTimeout(loadOrders, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadOrders]);
+  async function saveShipping(order) { const values = shipping[order._id] || { courierName: order.courierName || "", trackingNumber: order.trackingNumber || "" }; setError(""); setSuccess(""); try { const result = await request(`/orders/${order._id}/shipping`, { method: "PATCH", body: JSON.stringify(values) }); const email = result.notification?.status === "sent" ? " Email sent." : result.notification?.status === "not_configured" ? " Email not configured." : " Email failed."; setSuccess(`${order.orderNumber} marked as dispatched.${email}`); await loadOrders(); } catch (err) { setError(err.message); } }
   async function updateStatus(order, status) { try { await request(`/orders/${order._id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); setSuccess(`${order.orderNumber} updated.`); await loadOrders(); } catch (err) { setError(err.message); } }
   const visible = orders.filter((order) => ["approved", "dispatched", "in_transit"].includes(order.status) && (filter === "all" || order.status === filter));
   const setField = (order, field, value) => setShipping({ ...shipping, [order._id]: { ...(shipping[order._id] || { courierName: order.courierName || "", trackingNumber: order.trackingNumber || "" }), [field]: value } });
