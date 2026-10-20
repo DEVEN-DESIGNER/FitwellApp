@@ -46,6 +46,26 @@ function createAdminToken() {
   return `${payload}.${signature}`;
 }
 
+function createRetailerToken(retailerId) {
+  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const subject = String(retailerId);
+  const payload = `retailer:${subject}:${expiresAt}`;
+  const signature = crypto.createHmac("sha256", adminTokenSecret).update(payload).digest("hex");
+  return `${subject}.${expiresAt}.${signature}`;
+}
+
+function getRetailerIdFromToken(token) {
+  const [retailerId, expiresAt, signature] = String(token || "").split(".");
+  if (!mongoose.isValidObjectId(retailerId) || !expiresAt || !signature || Number(expiresAt) < Date.now()) return null;
+
+  const payload = `retailer:${retailerId}:${expiresAt}`;
+  const expected = crypto.createHmac("sha256", adminTokenSecret).update(payload).digest("hex");
+  const actualBuffer = Buffer.from(signature, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  if (actualBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) return null;
+  return retailerId;
+}
+
 function getInventoryVariantLabel(variant = {}) {
   return [variant.size, variant.nut, variant.inner, variant.glassy].filter(Boolean).join(" / ") || "Standard";
 }
@@ -213,8 +233,108 @@ app.post("/api/retailer/auth/login", async (req, res) => {
     const retailer = await Retailer.findOne({ email, status: "approved", isActive: true });
     if (!retailer || !retailer.passwordHash || !passwordMatches(password, retailer.passwordHash)) return res.status(401).json({ message: "Invalid retailer login details." });
     retailer.lastLoginAt = new Date(); retailer.loginCount += 1; await retailer.save();
-    res.json({ retailerId: retailer._id, shopName: retailer.shopName, ownerName: retailer.ownerName });
+    res.json({
+      token: createRetailerToken(retailer._id),
+      retailer: {
+        retailerId: retailer._id,
+        shopName: retailer.shopName,
+        ownerName: retailer.ownerName,
+        email: retailer.email,
+      },
+    });
   } catch (error) { res.status(500).json({ message: "Unable to sign in right now." }); }
+});
+
+async function requireRetailer(req, res, next) {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  const retailerId = getRetailerIdFromToken(token);
+  if (!retailerId) return res.status(401).json({ message: "Retailer sign-in required." });
+
+  try {
+    const retailer = await Retailer.findOne({ _id: retailerId, status: "approved", isActive: true })
+      .select("_id shopName ownerName email");
+    if (!retailer) return res.status(401).json({ message: "Retailer account is unavailable." });
+    req.retailer = retailer;
+    next();
+  } catch (error) {
+    res.status(500).json({ message: "Unable to verify retailer account." });
+  }
+}
+
+app.get("/api/retailer/catalog", requireRetailer, async (req, res) => {
+  try {
+    const [categories, products] = await Promise.all([
+      Category.find({ isActive: true }).sort({ name: 1 }),
+      Product.find({ isActive: true })
+        .populate({ path: "category", select: "name", match: { isActive: true } })
+        .sort({ createdAt: -1 }),
+    ]);
+    res.json({ categories, products: products.filter((product) => product.category) });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to load the product catalogue." });
+  }
+});
+
+app.get("/api/retailer/orders", requireRetailer, async (req, res) => {
+  try {
+    const orders = await Order.find({ retailer: req.retailer._id }).sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ message: "Unable to load retailer orders." });
+  }
+});
+
+app.post("/api/retailer/orders", requireRetailer, async (req, res) => {
+  try {
+    const { items, notes = "" } = req.body || {};
+    if (!Array.isArray(items) || !items.length) return res.status(400).json({ message: "Add at least one product to the order." });
+
+    const orderItems = [];
+    for (const requested of items) {
+      const quantity = Number(requested.quantity);
+      if (!mongoose.isValidObjectId(requested.productId) || !Number.isInteger(quantity) || quantity < 1) {
+        return res.status(400).json({ message: "Each order item needs a valid product and quantity." });
+      }
+      const product = await Product.findById(requested.productId).populate("category", "name");
+      if (!product || !product.isActive) return res.status(400).json({ message: "One selected product is unavailable." });
+      const variant = product.hasVariants ? product.variants.id(requested.variantId) : null;
+      if (product.hasVariants && !variant) return res.status(400).json({ message: `Select a valid variant for ${product.name}.` });
+      const source = variant || product;
+      orderItems.push({
+        product: product._id,
+        variantId: variant?._id || null,
+        name: product.name,
+        sku: source.sku,
+        size: source.size || "",
+        nut: source.nut || "",
+        inner: source.inner || "",
+        glassy: source.glassy || "",
+        quantity,
+        unitPrice: source.sellingPrice,
+        total: source.sellingPrice * quantity,
+      });
+    }
+
+    const subtotal = orderItems.reduce((sum, item) => sum + item.total, 0);
+    if (subtotal < 10000) return res.status(400).json({ message: "Minimum order value is ₹10,000." });
+    const gstRate = 18;
+    const gstAmount = Number((subtotal * gstRate / 100).toFixed(2));
+    const total = Number((subtotal + gstAmount).toFixed(2));
+    const orderNumber = `FW-${Date.now().toString(36).toUpperCase()}`;
+    const order = await Order.create({
+      orderNumber,
+      retailer: req.retailer._id,
+      items: orderItems,
+      subtotal,
+      gstRate,
+      gstAmount,
+      total,
+      notes,
+    });
+    res.status(201).json(order);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
 });
 
 function requireAdmin(req, res, next) {
