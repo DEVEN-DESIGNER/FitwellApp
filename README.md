@@ -13,12 +13,38 @@ A complete digital ordering solution for **Fitwell Sanitary Fittings**, enabling
 ## Core Features
 
 ### Retailer Mobile App
-- Retailer registration and authentication
+- Retailer sign-in (accounts are created and approved by Fitwell)
 - Product catalogue with images, categories and search
 - Variant, size and quantity selection
 - Shopping cart with a minimum order value of ₹10,000
 - Order placement and order history
 - Shipment and courier tracking
+
+### Running the Retailer App
+
+The Expo app uses the existing Express API and MongoDB database. It does not connect directly to MongoDB. Start the backend with its MongoDB connection and local admin/retailer setup configured, then set `EXPO_PUBLIC_API_URL` in `fitwell-retailer/.env` to the backend API URL:
+
+```env
+EXPO_PUBLIC_API_URL=http://localhost:5000/api
+```
+
+Use `http://10.0.2.2:5000/api` for the standard Android emulator. For a physical phone, use the computer's LAN IP address (for example, `http://192.168.1.20:5000/api`) and make sure the phone and computer are on the same network. Keep `.env` local; do not commit it.
+
+From the project root, start the backend and mobile app in separate terminals:
+
+```powershell
+Set-Location .\fitwell-backend
+npm install
+npm run dev
+```
+
+```powershell
+Set-Location .\fitwell-retailer
+npm install
+npx expo start
+```
+
+Open the Expo project in Expo Go or an emulator. A retailer must have an approved, active account created by Fitwell to sign in. The app supports product browsing, variant selection, cart checkout with the ₹10,000 minimum, order history, and shipment tracking.
 
 ### Admin Dashboard
 - Complete product CRUD operations
