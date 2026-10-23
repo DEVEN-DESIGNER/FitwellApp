@@ -20,3 +20,5 @@ services:
         sync: false
       - key: ADMIN_TOKEN_SECRET
         generateValue: true
+      - key: CORS_ORIGINS
+        value: http://localhost:5173,https://deven-designer.github.io

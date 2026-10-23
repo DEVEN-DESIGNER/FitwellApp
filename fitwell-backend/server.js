@@ -17,8 +17,19 @@ const InventoryMovement = require("./models/InventoryMovement");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 
 const app = express();
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGINS || "http://localhost:5173,https://deven-designer.github.io")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
 
-app.use(cors());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    return callback(new Error("Origin is not allowed by CORS."));
+  },
+}));
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (req, res) => {
@@ -28,7 +39,10 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-const adminTokenSecret = process.env.ADMIN_TOKEN_SECRET || "fitwell-local-admin-secret-change-me";
+const isProduction = process.env.NODE_ENV === "production";
+const adminTokenSecret = process.env.ADMIN_TOKEN_SECRET || (
+  isProduction ? "" : "fitwell-local-admin-secret-change-me"
+);
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
   const hash = crypto.scryptSync(password, salt, 64).toString("hex");
@@ -963,6 +977,10 @@ app.use("/api/inventory", inventoryRoutes);
 
 async function startServer() {
   try {
+    if (isProduction && (!adminTokenSecret || !process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD)) {
+      throw new Error("ADMIN_TOKEN_SECRET, ADMIN_USERNAME, and ADMIN_PASSWORD must be configured in production.");
+    }
+
     if (!process.env.MONGODB_URI) {
       throw new Error("MONGODB_URI is missing in .env");
     }
