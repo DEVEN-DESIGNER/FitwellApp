@@ -1,0 +1,4 @@
+exclude:
+  - fitwell-admin/node_modules
+  - fitwell-backend/node_modules
+  - fitwell-retailer/node_modules
