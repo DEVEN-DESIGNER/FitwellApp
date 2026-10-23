@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { API_BASE_URL as API } from "./api";
 
-const API = "http://localhost:5000/api";
 const emptyForm = { shopName: "", ownerName: "", phone: "", email: "", password: "", address: "", gstNumber: "" };
 
 export default function Retailers() {

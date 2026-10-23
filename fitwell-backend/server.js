@@ -21,6 +21,13 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
+app.get("/api/health", (req, res) => {
+  const databaseConnected = mongoose.connection.readyState === 1;
+  res.status(databaseConnected ? 200 : 503).json({
+    status: databaseConnected ? "ok" : "unavailable",
+  });
+});
+
 const adminTokenSecret = process.env.ADMIN_TOKEN_SECRET || "fitwell-local-admin-secret-change-me";
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {

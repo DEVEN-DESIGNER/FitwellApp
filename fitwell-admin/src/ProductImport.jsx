@@ -1,6 +1,6 @@
 import { useState } from "react";
+import { API_BASE_URL as API } from "./api";
 
-const API = "http://localhost:5000/api";
 const aliases = {
   product: "name", productname: "name", name: "name", category: "category", material: "material", description: "description", image: "image", productimage: "image",
   sku: "sku", size: "size", nut: "nut", inner: "inner", glassy: "glassy", purchaseprice: "purchasePrice", costprice: "purchasePrice",

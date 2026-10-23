@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-
-const API = "http://localhost:5000/api";
+import { API_BASE_URL as API } from "./api";
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState([]);

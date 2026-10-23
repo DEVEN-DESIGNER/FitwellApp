@@ -2,8 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import "./Categories.css";
 import Pagination from "./Pagination";
-
-const API = "http://localhost:5000/api/categories";
+import { getApiUrl } from "./api";
 
 export default function Categories() {
   const [categories, setCategories] = useState([]);
@@ -21,7 +20,7 @@ export default function Categories() {
     setError("");
 
     try {
-      const response = await fetch(API);
+      const response = await fetch(getApiUrl("/categories"));
       if (!response.ok) throw new Error("Could not load categories.");
 
       setCategories(await response.json());
@@ -57,7 +56,7 @@ export default function Categories() {
 
     try {
       const response = await fetch(
-        editingId ? `${API}/${editingId}` : API,
+        getApiUrl(editingId ? `/categories/${editingId}` : "/categories"),
         {
           method: editingId ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -95,7 +94,7 @@ export default function Categories() {
     if (!window.confirm("Deactivate this category?")) return;
 
     try {
-      const response = await fetch(`${API}/${id}`, {
+      const response = await fetch(getApiUrl(`/categories/${id}`), {
         method: "DELETE",
       });
 

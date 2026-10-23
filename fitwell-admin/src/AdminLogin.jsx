@@ -1,6 +1,5 @@
 import { useState } from "react";
-
-const API = "http://localhost:5000/api";
+import { getApiUrl } from "./api";
 
 export default function AdminLogin({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -16,7 +15,7 @@ export default function AdminLogin({ onLogin }) {
   async function submit(event) {
     event.preventDefault(); setError(""); setLoading(true);
     try {
-      const response = await fetch(`${API}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: username.trim(), password }) });
+      const response = await fetch(getApiUrl("/auth/login"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: username.trim(), password }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Unable to sign in.");
       localStorage.setItem("fitwell-admin-token", data.token); onLogin(data);
@@ -26,7 +25,7 @@ export default function AdminLogin({ onLogin }) {
   async function requestReset(event) {
     event.preventDefault(); setError(""); setNotice(""); setLoading(true);
     try {
-      const response = await fetch(`${API}/auth/forgot-password`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: username.trim() }) });
+      const response = await fetch(getApiUrl("/auth/forgot-password"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: username.trim() }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Unable to generate reset code.");
       setResetToken(data.resetToken || ""); setNotice(data.message);
@@ -36,7 +35,7 @@ export default function AdminLogin({ onLogin }) {
   async function resetPassword(event) {
     event.preventDefault(); setError(""); setNotice(""); setLoading(true);
     try {
-      const response = await fetch(`${API}/auth/reset-password`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: username.trim(), resetToken: resetCode, newPassword }) });
+      const response = await fetch(getApiUrl("/auth/reset-password"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: username.trim(), resetToken: resetCode, newPassword }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Unable to reset password.");
       setNotice(data.message); setForgotMode(false); setResetToken(""); setResetCode(""); setNewPassword(""); setPassword("");

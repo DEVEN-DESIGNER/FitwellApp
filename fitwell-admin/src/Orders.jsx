@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { API_BASE_URL as API } from "./api";
 
-const API = "http://localhost:5000/api";
 const emptyOrder = { retailerId: "", productId: "", variantId: "", quantity: 1, notes: "" };
 const statuses = ["all", "pending", "approved", "dispatched", "in_transit", "delivered", "cancelled"];
 

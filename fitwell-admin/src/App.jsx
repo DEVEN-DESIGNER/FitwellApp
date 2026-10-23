@@ -8,13 +8,10 @@ import Settings from "./Settings";
 import Reports from "./Reports";
 import ProductImport from "./ProductImport";
 import Pagination from "./Pagination";
+import { getApiUrl } from "./api";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import './index.css';
-
-
-const API = "http://localhost:5000/api";
-
 
 
 const emptyVariant = () => ({
@@ -278,7 +275,7 @@ export default function App() {
 
   const request = useCallback(async (path, options = {}) => {
 
-    const response = await fetch(`${API}${path}`, {
+    const response = await fetch(getApiUrl(path), {
 
       ...options,
 

@@ -3,10 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Pagination from "./Pagination";
-
-
-
-const API = "http://localhost:5000/api";
+import { API_BASE_URL as API } from "./api";
 
 
 

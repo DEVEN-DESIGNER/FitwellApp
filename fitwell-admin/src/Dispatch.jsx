@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-
-const API = "http://localhost:5000/api";
+import { API_BASE_URL as API } from "./api";
 
 export default function Dispatch() {
   const [orders, setOrders] = useState([]); const [shipping, setShipping] = useState({}); const [filter, setFilter] = useState("all"); const [error, setError] = useState(""); const [success, setSuccess] = useState("");

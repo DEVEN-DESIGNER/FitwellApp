@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-
-const API = "http://localhost:5000/api";
+import { API_BASE_URL as API } from "./api";
 
 function startOfWeek(date) {
   const value = new Date(date);

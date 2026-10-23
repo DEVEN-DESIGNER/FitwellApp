@@ -46,6 +46,14 @@ npx expo start
 
 Open the Expo project in Expo Go or an emulator. A retailer must have an approved, active account created by Fitwell to sign in. The app supports product browsing, variant selection, cart checkout with the ₹10,000 minimum, order history, and shipment tracking.
 
+### Admin Dashboard Hosting
+
+The admin dashboard is a static GitHub Pages site; it cannot host the Express API or MongoDB. The repository includes a Render Blueprint in `render.yaml` for hosting the API. Create a MongoDB Atlas cluster and database user, then create a Render Blueprint from this repository. When prompted, provide `MONGODB_URI`, `ADMIN_USERNAME`, and `ADMIN_PASSWORD`; Render generates `ADMIN_TOKEN_SECRET`. Do not commit these values. The API health check is available at `/api/health`.
+
+After the API deploys, add the GitHub Actions variable `VITE_API_URL` under **Settings → Secrets and variables → Actions → Variables** with the full HTTPS API base URL, for example `https://fitwell-api.onrender.com/api`. Push the Pages workflow changes or manually run **Deploy admin dashboard to GitHub Pages** to rebuild with that URL. The Render free service may take a short time to wake after inactivity. A new Atlas database starts empty; existing local MongoDB data must be migrated separately if it should appear in the deployed app.
+
+For local dashboard development, copy `fitwell-admin/.env.example` to `fitwell-admin/.env` and keep the localhost URL.
+
 ### Admin Dashboard
 - Complete product CRUD operations
 - Admin login is required before the dashboard and admin API can be accessed.
