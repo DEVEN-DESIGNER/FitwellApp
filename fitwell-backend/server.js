@@ -12,13 +12,14 @@ const Product = require("./models/Product");
 const Admin = require("./models/Admin");
 const Retailer = require("./models/Retailer");
 const Order = require("./models/Order");
+const RetailerNotification = require("./models/RetailerNotification");
 const Invoice = require("./models/Invoice");
 const InventoryMovement = require("./models/InventoryMovement");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 
 const app = express();
 const allowedOrigins = new Set(
-  (process.env.CORS_ORIGINS || "http://localhost:5173,https://deven-designer.github.io")
+  (process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:8081,https://deven-designer.github.io")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean)
@@ -51,9 +52,10 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
 
 function passwordMatches(password, storedHash) {
   const [salt, expected] = String(storedHash).split(":");
-  if (!salt || !expected) return false;
-  const actual = crypto.scryptSync(password, salt, 64).toString("hex");
-  return crypto.timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
+  if (!salt || !/^[a-f\d]{32}$/i.test(salt) || !/^[a-f\d]{128}$/i.test(expected || "")) return false;
+  const actual = crypto.scryptSync(password, salt, 64);
+  const expectedBuffer = Buffer.from(expected, "hex");
+  return crypto.timingSafeEqual(actual, expectedBuffer);
 }
 
 function hashResetToken(token) {
@@ -89,6 +91,68 @@ function getRetailerIdFromToken(token) {
 
 function getInventoryVariantLabel(variant = {}) {
   return [variant.size, variant.nut, variant.inner, variant.glassy].filter(Boolean).join(" / ") || "Standard";
+}
+
+async function sendExpoPushNotification(retailerId, pushTokens) {
+  const response = await fetch("https://exp.host/--/api/v2/push/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(pushTokens.map((to) => ({
+      to,
+      title: "Fitwell order update",
+      body: "You have a new update. Open the app to view details.",
+      sound: "default",
+    }))),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error(`Expo Push Service returned HTTP ${response.status}.`);
+  const result = await response.json();
+  const tickets = result.data || [];
+  const invalidTokens = tickets.flatMap((ticket, index) => (
+    ticket.status === "error" && ticket.details?.error === "DeviceNotRegistered" ? [pushTokens[index]] : []
+  ));
+  if (invalidTokens.length) {
+    await Retailer.updateOne({ _id: retailerId }, { $pull: { pushTokens: { $in: invalidTokens } } });
+  }
+  const pushErrors = tickets.filter((ticket) => ticket.status === "error");
+  if (pushErrors.length) console.error("Retailer push notification delivery failed:", pushErrors);
+}
+
+async function notifyRetailer(order, { title, message, type }) {
+  try {
+    const retailerId = order.retailer._id || order.retailer;
+    const notification = await RetailerNotification.create({
+      retailer: retailerId,
+      order: order._id,
+      title,
+      message,
+      type,
+    });
+    const retailer = await Retailer.findById(retailerId).select("pushTokens");
+    const pushTokens = retailer?.pushTokens || [];
+    if (pushTokens.length) sendExpoPushNotification(retailerId, pushTokens)
+      .catch((error) => console.error("Retailer push notification request failed:", error.message));
+    return notification;
+  } catch (error) {
+    console.error("Retailer notification could not be saved:", error);
+    return null;
+  }
+}
+
+function getOrderStatusNotification(status, orderNumber) {
+  const descriptions = {
+    approved: "Your order has been approved and is being prepared.",
+    dispatched: "Your order has been dispatched. Shipment details are available in the app.",
+    in_transit: "Your order is in transit.",
+    delivered: "Your order has been delivered.",
+    cancelled: "Your order has been cancelled. Contact Fitwell if you need help.",
+  };
+  if (!descriptions[status]) return null;
+  return {
+    title: `Order ${orderNumber} updated`,
+    message: descriptions[status],
+    type: "order_status",
+  };
 }
 
 // Reserve stock once when an order is approved or dispatched.
@@ -263,7 +327,10 @@ app.post("/api/retailer/auth/login", async (req, res) => {
         email: retailer.email,
       },
     });
-  } catch (error) { res.status(500).json({ message: "Unable to sign in right now." }); }
+  } catch (error) {
+    console.error("Retailer sign-in failed:", error);
+    res.status(500).json({ message: "Unable to sign in right now." });
+  }
 });
 
 async function requireRetailer(req, res, next) {
@@ -273,7 +340,7 @@ async function requireRetailer(req, res, next) {
 
   try {
     const retailer = await Retailer.findOne({ _id: retailerId, status: "approved", isActive: true })
-      .select("_id shopName ownerName email");
+      .select("_id shopName ownerName email phone address gstNumber");
     if (!retailer) return res.status(401).json({ message: "Retailer account is unavailable." });
     req.retailer = retailer;
     next();
@@ -281,6 +348,110 @@ async function requireRetailer(req, res, next) {
     res.status(500).json({ message: "Unable to verify retailer account." });
   }
 }
+
+app.get("/api/retailer/profile", requireRetailer, (req, res) => {
+  res.json({
+    retailerId: req.retailer._id,
+    shopName: req.retailer.shopName,
+    ownerName: req.retailer.ownerName,
+    email: req.retailer.email,
+    phone: req.retailer.phone,
+    address: req.retailer.address,
+    gstNumber: req.retailer.gstNumber,
+  });
+});
+
+app.patch("/api/retailer/profile", requireRetailer, async (req, res) => {
+  try {
+    const allowedFields = ["shopName", "ownerName", "phone", "address", "gstNumber"];
+    const updates = {};
+    for (const field of allowedFields) {
+      if (req.body?.[field] !== undefined) updates[field] = String(req.body[field]).trim();
+    }
+    if (!updates.shopName || !updates.ownerName || !updates.phone) {
+      return res.status(400).json({ message: "Shop name, owner name and phone are required." });
+    }
+    updates.gstNumber = String(updates.gstNumber || "").toUpperCase();
+    const retailer = await Retailer.findByIdAndUpdate(req.retailer._id, updates, {
+      new: true,
+      runValidators: true,
+    }).select("_id shopName ownerName email phone address gstNumber");
+    res.json({
+      retailerId: retailer._id,
+      shopName: retailer.shopName,
+      ownerName: retailer.ownerName,
+      email: retailer.email,
+      phone: retailer.phone,
+      address: retailer.address,
+      gstNumber: retailer.gstNumber,
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.put("/api/retailer/push-token", requireRetailer, async (req, res) => {
+  const token = String(req.body?.token || "").trim();
+  if (!/^(Expo|Exponent)PushToken\[[^\]]+\]$/.test(token)) {
+    return res.status(400).json({ message: "A valid Expo push token is required." });
+  }
+  try {
+    await Retailer.updateOne({ _id: req.retailer._id }, { $addToSet: { pushTokens: token } });
+    res.json({ registered: true });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to register push notifications." });
+  }
+});
+
+app.delete("/api/retailer/push-token", requireRetailer, async (req, res) => {
+  const token = String(req.body?.token || "").trim();
+  if (!token) return res.status(400).json({ message: "A push token is required." });
+  try {
+    await Retailer.updateOne({ _id: req.retailer._id }, { $pull: { pushTokens: token } });
+    res.json({ registered: false });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to disable push notifications." });
+  }
+});
+
+app.get("/api/retailer/notifications", requireRetailer, async (req, res) => {
+  try {
+    const notifications = await RetailerNotification.find({ retailer: req.retailer._id })
+      .sort({ createdAt: -1 })
+      .limit(100);
+    const unreadCount = await RetailerNotification.countDocuments({ retailer: req.retailer._id, readAt: null });
+    res.json({ notifications, unreadCount });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to load retailer notifications." });
+  }
+});
+
+app.patch("/api/retailer/notifications/read-all", requireRetailer, async (req, res) => {
+  try {
+    await RetailerNotification.updateMany(
+      { retailer: req.retailer._id, readAt: null },
+      { $set: { readAt: new Date() } }
+    );
+    res.json({ updated: true });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to update retailer notifications." });
+  }
+});
+
+app.patch("/api/retailer/notifications/:id/read", requireRetailer, async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: "Invalid notification." });
+  try {
+    const notification = await RetailerNotification.findOneAndUpdate(
+      { _id: req.params.id, retailer: req.retailer._id },
+      { $set: { readAt: new Date() } },
+      { new: true }
+    );
+    if (!notification) return res.status(404).json({ message: "Notification not found." });
+    res.json(notification);
+  } catch (error) {
+    res.status(500).json({ message: "Unable to update retailer notification." });
+  }
+});
 
 app.get("/api/retailer/catalog", requireRetailer, async (req, res) => {
   try {
@@ -307,8 +478,12 @@ app.get("/api/retailer/orders", requireRetailer, async (req, res) => {
 
 app.post("/api/retailer/orders", requireRetailer, async (req, res) => {
   try {
-    const { items, notes = "" } = req.body || {};
+    const { items, notes = "", paymentMethod } = req.body || {};
     if (!Array.isArray(items) || !items.length) return res.status(400).json({ message: "Add at least one product to the order." });
+    if (typeof notes !== "string" || notes.length > 500) return res.status(400).json({ message: "Order notes must be 500 characters or fewer." });
+    if (!["cash_on_delivery", "upi", "bank_transfer"].includes(paymentMethod)) {
+      return res.status(400).json({ message: "Select a valid payment method." });
+    }
 
     const orderItems = [];
     for (const requested of items) {
@@ -331,6 +506,7 @@ app.post("/api/retailer/orders", requireRetailer, async (req, res) => {
         inner: source.inner || "",
         glassy: source.glassy || "",
         quantity,
+        availableStockAtOrder: Number(source.stock || 0),
         unitPrice: source.sellingPrice,
         total: source.sellingPrice * quantity,
       });
@@ -350,7 +526,14 @@ app.post("/api/retailer/orders", requireRetailer, async (req, res) => {
       gstRate,
       gstAmount,
       total,
-      notes,
+      notes: notes.trim(),
+      paymentMethod,
+      statusHistory: [{ status: "pending" }],
+    });
+    await notifyRetailer(order, {
+      title: `Order ${order.orderNumber} received`,
+      message: "Your order has been placed and is awaiting Fitwell's review.",
+      type: "order_placed",
     });
     res.status(201).json(order);
   } catch (error) {
@@ -448,7 +631,7 @@ app.post("/api/orders", async (req, res) => {
       const variant = product.hasVariants ? product.variants.id(requested.variantId) : null;
       if (product.hasVariants && !variant) return res.status(400).json({ message: `Select a valid variant for ${product.name}.` });
       const source = variant || product;
-      orderItems.push({ product: product._id, variantId: variant?._id || null, name: product.name, sku: source.sku, size: source.size || "", nut: source.nut || "", inner: source.inner || "", glassy: source.glassy || "", quantity, unitPrice: source.sellingPrice, total: source.sellingPrice * quantity });
+      orderItems.push({ product: product._id, variantId: variant?._id || null, name: product.name, sku: source.sku, size: source.size || "", nut: source.nut || "", inner: source.inner || "", glassy: source.glassy || "", quantity, availableStockAtOrder: Number(source.stock || 0), unitPrice: source.sellingPrice, total: source.sellingPrice * quantity });
     }
 
     const subtotal = orderItems.reduce((sum, item) => sum + item.total, 0);
@@ -457,7 +640,22 @@ app.post("/api/orders", async (req, res) => {
     const gstAmount = Number((subtotal * gstRate / 100).toFixed(2));
     const total = Number((subtotal + gstAmount).toFixed(2));
     const orderNumber = `FW-${Date.now().toString(36).toUpperCase()}`;
-    const order = await Order.create({ orderNumber, retailer: retailer._id, items: orderItems, subtotal, gstRate, gstAmount, total, notes });
+    const order = await Order.create({
+      orderNumber,
+      retailer: retailer._id,
+      items: orderItems,
+      subtotal,
+      gstRate,
+      gstAmount,
+      total,
+      notes,
+      statusHistory: [{ status: "pending" }],
+    });
+    await notifyRetailer(order, {
+      title: `Order ${order.orderNumber} received`,
+      message: "A new order has been placed for your shop.",
+      type: "order_placed",
+    });
     res.status(201).json(await order.populate("retailer", "shopName ownerName phone"));
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -472,6 +670,7 @@ app.patch("/api/orders/:id/status", async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found." });
     if (order.status === "cancelled" || order.status === "delivered") return res.status(400).json({ message: "This order can no longer be changed." });
+    const previousStatus = order.status;
 
     if ((status === "approved" || status === "dispatched") && !order.approvedAt) {
       await reserveOrderInventory(order);
@@ -480,7 +679,12 @@ app.patch("/api/orders/:id/status", async (req, res) => {
     order.status = status;
     if (status === "dispatched" && !order.dispatchDate) order.dispatchDate = new Date();
     if (status === "delivered") order.deliveredAt = new Date();
+    if (status !== previousStatus) order.statusHistory.push({ status, changedAt: new Date() });
     await order.save();
+    if (status !== previousStatus) {
+      const notification = getOrderStatusNotification(status, order.orderNumber);
+      if (notification) await notifyRetailer(order, notification);
+    }
     res.json(await order.populate("retailer", "shopName ownerName phone"));
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -494,6 +698,9 @@ app.patch("/api/orders/:id/shipping", async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found." });
     if (order.status === "cancelled" || order.status === "delivered") return res.status(400).json({ message: "This order can no longer be dispatched." });
+    const previousStatus = order.status;
+    const shippingChanged = order.courierName !== String(courierName).trim()
+      || order.trackingNumber !== String(trackingNumber).trim().toUpperCase();
     if (!order.approvedAt) {
       await reserveOrderInventory(order);
       order.approvedAt = new Date();
@@ -502,6 +709,7 @@ app.patch("/api/orders/:id/shipping", async (req, res) => {
     order.trackingNumber = String(trackingNumber).trim().toUpperCase();
     order.status = "dispatched";
     order.dispatchDate = order.dispatchDate || new Date();
+    if (previousStatus !== "dispatched") order.statusHistory.push({ status: "dispatched", changedAt: new Date() });
     await order.save();
     await order.populate("retailer", "shopName ownerName email");
     let emailNotification = { status: "not_configured" };
@@ -520,6 +728,10 @@ app.patch("/api/orders/:id/shipping", async (req, res) => {
     order.trackingEmailStatus = emailNotification.status;
     if (emailNotification.status === "sent") order.trackingEmailSentAt = new Date();
     await order.save();
+    if (previousStatus !== "dispatched" || shippingChanged) {
+      const notification = getOrderStatusNotification("dispatched", order.orderNumber);
+      await notifyRetailer(order, notification);
+    }
     res.json({ order, notification: emailNotification });
   } catch (error) { res.status(400).json({ message: error.message }); }
 });

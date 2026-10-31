@@ -15,6 +15,7 @@ const retailerSchema = new mongoose.Schema(
     address: { type: String, trim: true, default: "" },
     gstNumber: { type: String, uppercase: true, trim: true, default: "" },
     passwordHash: { type: String, default: "" },
+    pushTokens: { type: [String], default: [] },
     lastLoginAt: { type: Date, default: null },
     loginCount: { type: Number, default: 0 },
     status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },

@@ -11,8 +11,17 @@ const orderItemSchema = new mongoose.Schema(
     inner: { type: String, default: "" },
     glassy: { type: String, default: "" },
     quantity: { type: Number, min: 1, required: true },
+    availableStockAtOrder: { type: Number, min: 0, default: null },
     unitPrice: { type: Number, min: 0, required: true },
     total: { type: Number, min: 0, required: true },
+  },
+  { _id: false }
+);
+
+const orderStatusHistorySchema = new mongoose.Schema(
+  {
+    status: { type: String, enum: ["pending", "approved", "dispatched", "in_transit", "delivered", "cancelled"], required: true },
+    changedAt: { type: Date, default: Date.now },
   },
   { _id: false }
 );
@@ -27,6 +36,7 @@ const orderSchema = new mongoose.Schema(
     gstAmount: { type: Number, min: 0, default: 0 },
     total: { type: Number, min: 0, required: true },
     status: { type: String, enum: ["pending", "approved", "dispatched", "in_transit", "delivered", "cancelled"], default: "pending" },
+    statusHistory: { type: [orderStatusHistorySchema], default: [] },
     courierName: { type: String, default: "" },
     trackingNumber: { type: String, default: "" },
     dispatchDate: { type: Date, default: null },
@@ -34,6 +44,7 @@ const orderSchema = new mongoose.Schema(
     trackingEmailStatus: { type: String, enum: ["not_sent", "sent", "failed", "not_configured"], default: "not_sent" },
     trackingEmailSentAt: { type: Date, default: null },
     notes: { type: String, default: "" },
+    paymentMethod: { type: String, enum: ["cash_on_delivery", "upi", "bank_transfer"], default: null },
     approvedAt: { type: Date, default: null },
   },
   { timestamps: true }

@@ -33,6 +33,52 @@ export function getOrders(token) {
   return request("/retailer/orders", { token });
 }
 
+export function getProfile(token) {
+  return request("/retailer/profile", { token });
+}
+
+export function updateProfile(token, profile) {
+  return request("/retailer/profile", {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(profile),
+  });
+}
+
+export function getNotifications(token) {
+  return request("/retailer/notifications", { token });
+}
+
+export function markNotificationRead(token, notificationId) {
+  return request(`/retailer/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: "PATCH",
+    token,
+  });
+}
+
+export function markAllNotificationsRead(token) {
+  return request("/retailer/notifications/read-all", {
+    method: "PATCH",
+    token,
+  });
+}
+
+export function registerPushToken(token, pushToken) {
+  return request("/retailer/push-token", {
+    method: "PUT",
+    token,
+    body: JSON.stringify({ token: pushToken }),
+  });
+}
+
+export function unregisterPushToken(token, pushToken) {
+  return request("/retailer/push-token", {
+    method: "DELETE",
+    token,
+    body: JSON.stringify({ token: pushToken }),
+  });
+}
+
 export function submitOrder(token, order) {
   return request("/retailer/orders", {
     method: "POST",

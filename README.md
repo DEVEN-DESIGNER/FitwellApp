@@ -14,9 +14,17 @@ A complete digital ordering solution for **Fitwell Sanitary Fittings**, enabling
 
 ### Retailer Mobile App
 - Retailer sign-in (accounts are created and approved by Fitwell)
+- Shopkeeper home screen with quick catalogue, category and cart summaries
 - Product catalogue with images, categories and search
-- Variant, size and quantity selection
+- Variant and size selection with visible inventory and backorder quantities
+- Out-of-stock variants can be added as clearly labelled backorder requests
 - Shopping cart with a minimum order value of ₹10,000
+- Checkout payment-method preference (cash on delivery, UPI, or bank transfer; payment is not processed in-app)
+- Saved cart restored against current product and stock data
+- Checkout delivery notes, order details and a status timeline
+- Reorder from previous orders, skipping unavailable items
+- Retailer profile editing
+- In-app order notifications and optional iOS/Android push alerts
 - Order placement and order history
 - Shipment and courier tracking
 
@@ -44,11 +52,13 @@ npm install
 npx expo start
 ```
 
-Open the Expo project in Expo Go or an emulator. A retailer must have an approved, active account created by Fitwell to sign in. The app supports product browsing, variant selection, cart checkout with the ₹10,000 minimum, order history, and shipment tracking.
+Open the Expo project in Expo Go or an emulator. A retailer must have an approved, active account created by Fitwell to sign in. Confirmed retailer orders are saved in MongoDB as pending orders and appear in the admin dashboard's Orders list, including item quantities, notes, payment-method preference, and any stock-shortage flags. Selecting a payment method records the retailer's preference only; it does not process a payment or collect financial credentials. Admin approval reserves inventory; a backorder must be restocked before it can be approved.
+
+Push alerts need an EAS project ID configured in `fitwell-retailer/app.json` under `expo.extra.eas.projectId`, plus an iOS/Android development or production build with push credentials configured. Remote push notifications do not work in Expo Go on Android; in-app notifications and order history remain available without push setup. The app registers device tokens with the retailer API and removes the current device token when the retailer signs out.
 
 ### Admin Dashboard Hosting
 
-The admin dashboard is a static GitHub Pages site; it cannot host the Express API or MongoDB. The repository includes a Render Blueprint in `render.yaml` for hosting the API. Create a MongoDB Atlas cluster and database user, then create a Render Blueprint from this repository. When prompted, provide `MONGODB_URI`, `ADMIN_USERNAME`, and `ADMIN_PASSWORD`; Render generates `ADMIN_TOKEN_SECRET`. Do not commit these values. The backend refuses to start in production if its admin credentials or token-signing secret are missing. Browser origins are limited by `CORS_ORIGINS` (configured for the GitHub Pages site and local Vite development by default). Use `fitwell-backend/.env.example` as a local template (never put real credentials in the example). The API health check is available at `/api/health`.
+The admin dashboard is a static GitHub Pages site; it cannot host the Express API or MongoDB. The repository includes a Render Blueprint in `render.yaml` for hosting the API. Create a MongoDB Atlas cluster and database user, then create a Render Blueprint from this repository. When prompted, provide `MONGODB_URI`, `ADMIN_USERNAME`, and `ADMIN_PASSWORD`; Render generates `ADMIN_TOKEN_SECRET`. Do not commit these values. The backend refuses to start in production if its admin credentials or token-signing secret are missing. Browser origins are limited by `CORS_ORIGINS` (local defaults include Vite on port 5173, Expo web on port 8081, and the GitHub Pages site). If you set `CORS_ORIGINS` in your local `.env`, include `http://localhost:8081` to use the retailer app in a browser. Use `fitwell-backend/.env.example` as a local template (never put real credentials in the example). The API health check is available at `/api/health`.
 
 After the API deploys, add the GitHub Actions variable `VITE_API_URL` under **Settings → Secrets and variables → Actions → Variables** with the full HTTPS API base URL, for example `https://fitwell-api.onrender.com/api`. Push the Pages workflow changes or manually run **Deploy admin dashboard to GitHub Pages** to rebuild with that URL. The Render free service may take a short time to wake after inactivity. A new Atlas database starts empty; existing local MongoDB data must be migrated separately if it should appear in the deployed app.
 
